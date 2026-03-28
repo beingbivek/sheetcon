@@ -1,36 +1,103 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# SheetFlow
 
-## Getting Started
+> Transform your Google Sheets into beautiful web applications
 
-First, run the development server:
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
+
+## 🚀 What is SheetFlow?
+
+SheetFlow turns your Google Sheets into powerful web applications in minutes. Choose from professional templates for inventory management, invoicing, personal finance tracking, and more. Your data stays in your sheets—we just make it beautiful and functional.
+
+### ✨ Features
+
+- 🔐 **Secure Authentication** - Google OAuth 2.0
+- 📊 **Pre-built Templates** - Inventory, Finance, Billing, and more
+- 🔄 **Real-time Sync** - Changes reflect instantly in your Google Sheet
+- 📱 **Mobile Responsive** - Works on all devices
+- 📄 **PDF Export** - Generate professional invoices and reports
+- 🎨 **Customizable** - Brand it with your logo and colors (Pro tier)
+- 💰 **Free Tier** - Get started at no cost
+
+### 🛠️ Tech Stack
+
+- **Frontend:** Next.js 14, React, TypeScript, Tailwind CSS
+- **Backend:** Next.js API Routes, Prisma ORM
+- **Database:** PostgreSQL (Neon.tech)
+- **Authentication:** NextAuth.js
+- **APIs:** Google Sheets API v4
+- **Hosting:** Vercel
+
+### 📦 Quick Start
+
+# Clone the repository
+```bash
+git clone https://github.com/yourusername/sheetflow.git
+cd sheetflow
+```
+# Install dependencies
+```
+npm install
+```
+# Set up environment variables
+```
+cp .env.example .env.local
+```
+# Edit .env.local with your credentials
+
+# Run database migrations
+```
+npx prisma migrate dev
+```
+# Start development server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Visit: http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📖 Documentation
+- Full SRS Document
+- API Documentation
+- Deployment Guide
+- Contributing Guide
 
-## Learn More
 
-To learn more about Next.js, take a look at the following resources:
+## 🗺️ Roadmap
+- [ ] User authentication
+- [ ] Google Sheets integration
+- [ ] Finance template
+- [ ] Inventory template
+- [ ] Template builder (admin)
+- [ ] Payment integration
+- [ ] Mobile app (React Native)
+- [ ] API access (Business tier)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 🤝 Contributing
+Contributions are welcome! Please read our **Contributing Guide** first.
 
-## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## 📝 License
+This project is licensed under the MIT License — see the `LICENSE` file for details.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## 🙏 Acknowledgments
+- Google Sheets API
+- Next.js team
+- Vercel for hosting
+- Open source community
+
+
+## 📧 Contact
+- Email: support@sheetflow.app
+- Twitter: @sheetflow
+- Discord: Join our community
+
+
+---
+
+Made with ❤️ by **[Bivek Thapa]**
