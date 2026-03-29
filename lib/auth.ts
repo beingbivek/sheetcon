@@ -10,7 +10,6 @@ export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma) as any,
   
   providers: [
-    // Admin Login (Credentials)
     CredentialsProvider({
       id: 'admin-login',
       name: 'Admin Login',
@@ -31,7 +30,6 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Please enter email and password');
         }
 
-        // Find admin by email
         const admin = await prisma.admin.findUnique({
           where: { email: credentials.email },
         });
@@ -44,7 +42,6 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Your account has been deactivated');
         }
 
-        // Verify password
         const isPasswordValid = await bcrypt.compare(
           credentials.password,
           admin.passwordHash
@@ -54,7 +51,6 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Invalid email or password');
         }
 
-        // Update last login
         await prisma.admin.update({
           where: { id: admin.id },
           data: { 
@@ -62,7 +58,6 @@ export const authOptions: NextAuthOptions = {
           },
         });
 
-        // Return user object
         return {
           id: admin.id,
           email: admin.email,
@@ -96,13 +91,13 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    signIn: '/admin/login',
-    error: '/admin/login',
+    signIn: '/admin-login',  // ← CHANGED THIS
+    error: '/admin-login',   // ← CHANGED THIS
   },
 
   session: {
     strategy: 'jwt',
-    maxAge: 60 * 60, // 1 hour
+    maxAge: 60 * 60,
   },
 
   secret: process.env.NEXTAUTH_SECRET,

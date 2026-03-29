@@ -1,4 +1,4 @@
-// app/admin/login/page.tsx
+// app/(auth)/admin-login/page.tsx
 
 'use client';
 
@@ -33,7 +33,6 @@ export default function AdminLoginPage() {
       }
 
       if (result?.ok) {
-        // Redirect to admin dashboard
         router.push('/admin');
         router.refresh();
       }

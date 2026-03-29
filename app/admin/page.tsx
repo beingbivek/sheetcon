@@ -1,58 +1,111 @@
 // app/admin/page.tsx
 
-import { requireAdmin } from '@/lib/auth-helpers';
-import { redirect } from 'next/navigation';
+import { prisma } from '@/lib/db';
 
 export default async function AdminDashboardPage() {
-  const session = await requireAdmin();
+  // Fetch statistics
+  const [userCount, tierCount, adminCount] = await Promise.all([
+    prisma.user.count(),
+    prisma.tier.count(),
+    prisma.admin.count(),
+  ]);
 
-  if (!session) {
-    redirect('/admin/login');
-  }
+  // Fetch recent tiers
+  const recentTiers = await prisma.tier.findMany({
+    take: 3,
+    orderBy: { createdAt: 'desc' },
+  });
 
   return (
-    <div className="min-h-screen bg-slate-900 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        <h1 className="text-4xl font-bold mb-4">Admin Dashboard</h1>
-        
-        <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-          <h2 className="text-2xl font-semibold mb-4">
-            Welcome, {session.user.name}! 👋
-          </h2>
-          
-          <div className="space-y-2 text-slate-300">
-            <p><strong>Email:</strong> {session.user.email}</p>
-            <p><strong>Role:</strong> {(session.user as any).role}</p>
-            <p><strong>Status:</strong> <span className="text-green-400">Active</span></p>
-          </div>
+    <div>
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white mb-2">Dashboard</h1>
+        <p className="text-slate-400">Welcome back! Here's what's happening.</p>
+      </div>
 
-          <div className="mt-6">
-            <a
-              href="/api/auth/signout"
-              className="inline-block px-6 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+      {/* Stats Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <StatCard
+          title="Total Users"
+          value={userCount.toString()}
+          icon="👥"
+          color="blue"
+        />
+        <StatCard
+          title="Active Tiers"
+          value={tierCount.toString()}
+          icon="🏷️"
+          color="green"
+        />
+        <StatCard
+          title="Admins"
+          value={adminCount.toString()}
+          icon="👨‍💼"
+          color="purple"
+        />
+        <StatCard
+          title="Revenue (MRR)"
+          value="₹0"
+          icon="💰"
+          color="yellow"
+        />
+      </div>
+
+      {/* Recent Tiers */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
+        <h2 className="text-xl font-semibold text-white mb-4">Recent Tiers</h2>
+        <div className="space-y-3">
+          {recentTiers.map((tier) => (
+            <div
+              key={tier.id}
+              className="flex items-center justify-between p-4 bg-slate-900 rounded-lg"
             >
-              Sign Out
-            </a>
-          </div>
-        </div>
-
-        <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-2">Total Users</h3>
-            <p className="text-3xl font-bold text-blue-400">0</p>
-          </div>
-          
-          <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-2">Total Tiers</h3>
-            <p className="text-3xl font-bold text-green-400">3</p>
-          </div>
-          
-          <div className="bg-slate-800 rounded-lg p-6 border border-slate-700">
-            <h3 className="text-lg font-semibold mb-2">Revenue (MRR)</h3>
-            <p className="text-3xl font-bold text-purple-400">₹0</p>
-          </div>
+              <div>
+                <p className="font-medium text-white">{tier.name}</p>
+                <p className="text-sm text-slate-400">{tier.description || 'No description'}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-semibold text-white">
+                  ₹{tier.price}/month
+                </p>
+                <p className="text-sm text-slate-400">
+                  {tier.currentUserCount} users
+                </p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
+    </div>
+  );
+}
+
+function StatCard({
+  title,
+  value,
+  icon,
+  color,
+}: {
+  title: string;
+  value: string;
+  icon: string;
+  color: 'blue' | 'green' | 'purple' | 'yellow';
+}) {
+  const colorClasses = {
+    blue: 'from-blue-500 to-blue-600',
+    green: 'from-green-500 to-green-600',
+    purple: 'from-purple-500 to-purple-600',
+    yellow: 'from-yellow-500 to-yellow-600',
+  };
+
+  return (
+    <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-sm font-medium text-slate-400">{title}</p>
+        <span className="text-2xl">{icon}</span>
+      </div>
+      <p className="text-3xl font-bold text-white">{value}</p>
+      <div className={`h-1 bg-gradient-to-r ${colorClasses[color]} rounded-full mt-4`} />
     </div>
   );
 }
