@@ -1,0 +1,101 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════
+// ADMIN MODEL
+// ═══════════════════════════════════════════════════
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole @default(ADMIN)
+  
+  isActive     Boolean   @default(true)
+  lastLogin    DateTime?
+  
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  
+  @@index([email])
+}
+
+enum AdminRole {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT
+}
+
+// ═══════════════════════════════════════════════════
+// TIER MODEL (Subscription Plans)
+// ═══════════════════════════════════════════════════
+
+model Tier {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  
+  price       Float    @default(0)
+  currency    String   @default("INR")
+  
+  maxUsers          Int      @default(-1)
+  currentUserCount  Int      @default(0)
+  maxSheets         Int      @default(1)
+  maxTemplates      Int      @default(1)
+  maxCrudPerDay     Int      @default(1000)
+  
+  customBranding    Boolean  @default(false)
+  prioritySupport   Boolean  @default(false)
+  exportToPdf       Boolean  @default(true)
+  
+  isActive          Boolean  @default(true)
+  displayOrder      Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  users       User[]
+  
+  @@index([slug])
+}
+
+// ═══════════════════════════════════════════════════
+// USER MODEL
+// ═══════════════════════════════════════════════════
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  image         String?
+  passwordHash  String?
+  
+  tierId        String
+  tier          Tier      @relation(fields: [tierId], references: [id])
+  
+  googleId      String?   @unique
+  accessToken   String?   @db.Text
+  refreshToken  String?   @db.Text
+  
+  isActive      Boolean   @default(true)
+  emailVerified Boolean   @default(false)
+  
+  crudCountToday    Int      @default(0)
+  lastCrudReset     DateTime @default(now())
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  @@index([email])
+  @@index([tierId])
+}
