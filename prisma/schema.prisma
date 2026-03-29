@@ -70,7 +70,7 @@ model Tier {
 }
 
 // ═══════════════════════════════════════════════════
-// USER MODEL
+// USER MODEL (Updated)
 // ═══════════════════════════════════════════════════
 
 model User {
@@ -80,22 +80,73 @@ model User {
   image         String?
   passwordHash  String?
   
+  // Tier relation
   tierId        String
   tier          Tier      @relation(fields: [tierId], references: [id])
   
+  // OAuth tokens
   googleId      String?   @unique
   accessToken   String?   @db.Text
   refreshToken  String?   @db.Text
   
+  // Status
   isActive      Boolean   @default(true)
   emailVerified Boolean   @default(false)
   
+  // Ban system (NEW FIELDS)
+  isBanned      Boolean   @default(false)
+  banReason     String?
+  
+  // Activity tracking
+  lastLoginAt   DateTime?
+  
+  // Usage tracking
   crudCountToday    Int      @default(0)
   lastCrudReset     DateTime @default(now())
   
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   
+  // Relations
+  sheetConnections SheetConnection[]
+  
   @@index([email])
   @@index([tierId])
+}
+
+// ═══════════════════════════════════════════════════
+// SHEET CONNECTION MODEL (Add if not exists)
+// ═══════════════════════════════════════════════════
+
+model SheetConnection {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Sheet Details
+  sheetType       String    // "google_sheets", "excel_online"
+  spreadsheetId   String
+  spreadsheetName String
+  spreadsheetUrl  String
+  
+  // Template Lock
+  templateId      String?
+  templateLocked  Boolean   @default(false)
+  lockedAt        DateTime?
+  
+  // Column Mappings
+  columnMappings  Json?
+  
+  // Status
+  isActive        Boolean   @default(true)
+  lastSyncedAt    DateTime?
+  syncStatus      String    @default("PENDING")
+  syncError       String?
+  
+  // Metadata
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  @@unique([userId, spreadsheetId])
+  @@index([userId, isActive])
 }
