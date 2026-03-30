@@ -19,13 +19,13 @@ model Admin {
   passwordHash String
   name         String
   role         AdminRole @default(ADMIN)
-  
-  isActive     Boolean   @default(true)
-  lastLogin    DateTime?
-  
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  
+
+  isActive  Boolean   @default(true)
+  lastLogin DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([email])
 }
 
@@ -40,32 +40,32 @@ enum AdminRole {
 // ═══════════════════════════════════════════════════
 
 model Tier {
-  id          String   @id @default(cuid())
-  name        String   @unique
-  slug        String   @unique
+  id          String  @id @default(cuid())
+  name        String  @unique
+  slug        String  @unique
   description String?
-  
-  price       Float    @default(0)
-  currency    String   @default("INR")
-  
-  maxUsers          Int      @default(-1)
-  currentUserCount  Int      @default(0)
-  maxSheets         Int      @default(1)
-  maxTemplates      Int      @default(1)
-  maxCrudPerDay     Int      @default(1000)
-  
-  customBranding    Boolean  @default(false)
-  prioritySupport   Boolean  @default(false)
-  exportToPdf       Boolean  @default(true)
-  
-  isActive          Boolean  @default(true)
-  displayOrder      Int      @default(0)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  users       User[]
-  
+
+  price    Float  @default(0)
+  currency String @default("INR")
+
+  maxUsers         Int @default(-1)
+  currentUserCount Int @default(0)
+  maxSheets        Int @default(1)
+  maxTemplates     Int @default(1)
+  maxCrudPerDay    Int @default(1000)
+
+  customBranding  Boolean @default(false)
+  prioritySupport Boolean @default(false)
+  exportToPdf     Boolean @default(true)
+
+  isActive     Boolean @default(true)
+  displayOrder Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+
   @@index([slug])
 }
 
@@ -74,42 +74,42 @@ model Tier {
 // ═══════════════════════════════════════════════════
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  image         String?
-  passwordHash  String?
-  
+  id           String  @id @default(cuid())
+  email        String  @unique
+  name         String?
+  image        String?
+  passwordHash String?
+
   // Tier relation
-  tierId        String
-  tier          Tier      @relation(fields: [tierId], references: [id])
-  
+  tierId String
+  tier   Tier   @relation(fields: [tierId], references: [id])
+
   // OAuth tokens
-  googleId      String?   @unique
-  accessToken   String?   @db.Text
-  refreshToken  String?   @db.Text
-  
+  googleId     String? @unique
+  accessToken  String? @db.Text
+  refreshToken String? @db.Text
+
   // Status
-  isActive      Boolean   @default(true)
-  emailVerified Boolean   @default(false)
-  
+  isActive      Boolean @default(true)
+  emailVerified Boolean @default(false)
+
   // Ban system (NEW FIELDS)
-  isBanned      Boolean   @default(false)
-  banReason     String?
-  
+  isBanned  Boolean @default(false)
+  banReason String?
+
   // Activity tracking
-  lastLoginAt   DateTime?
-  
+  lastLoginAt DateTime?
+
   // Usage tracking
-  crudCountToday    Int      @default(0)
-  lastCrudReset     DateTime @default(now())
-  
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  
+  crudCountToday Int      @default(0)
+  lastCrudReset  DateTime @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
   sheetConnections SheetConnection[]
-  
+
   @@index([email])
   @@index([tierId])
 }
@@ -119,34 +119,69 @@ model User {
 // ═══════════════════════════════════════════════════
 
 model SheetConnection {
-  id              String    @id @default(cuid())
-  userId          String
-  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // Sheet Details
-  sheetType       String    // "google_sheets", "excel_online"
+  sheetType       String // "google_sheets", "excel_online"
   spreadsheetId   String
   spreadsheetName String
   spreadsheetUrl  String
-  
+
   // Template Lock
-  templateId      String?
-  templateLocked  Boolean   @default(false)
-  lockedAt        DateTime?
-  
+  templateId     String?
+  templateLocked Boolean   @default(false)
+  lockedAt       DateTime?
+
   // Column Mappings
-  columnMappings  Json?
-  
+  columnMappings Json?
+
   // Status
-  isActive        Boolean   @default(true)
-  lastSyncedAt    DateTime?
-  syncStatus      String    @default("PENDING")
-  syncError       String?
-  
+  isActive     Boolean   @default(true)
+  lastSyncedAt DateTime?
+  syncStatus   String    @default("PENDING")
+  syncError    String?
+
   // Metadata
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@unique([userId, spreadsheetId])
   @@index([userId, isActive])
+}
+
+// ═══════════════════════════════════════════════════
+// TEMPLATE MODEL
+// ═══════════════════════════════════════════════════
+
+model Template {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String? @db.Text
+  icon        String  @default("📋")
+
+  // Template Configuration (JSON Schema)
+  configSchema Json
+
+  // UI Configuration
+  primaryColor String @default("#3b82f6")
+
+  // Features enabled for this template
+  features String[] @default([])
+
+  // Availability
+  isActive Boolean @default(true)
+  isPublic Boolean @default(true)
+
+  // Version control
+  version String @default("1.0.0")
+
+  // Metadata
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([slug])
+  @@index([isActive, isPublic])
 }

@@ -162,18 +162,257 @@ async function main() {
   console.log(`   - ${testUser3.name} (${testUser3.email}) - Business\n`);
 
   // ═══════════════════════════════════════════════════
-  // 3. SUMMARY
+  // 4. CREATE DEFAULT TEMPLATES
+  // ═══════════════════════════════════════════════════
+
+  console.log("📋 Creating templates...");
+
+  const financeTemplate = await prisma.template.upsert({
+    where: { slug: "finance" },
+    update: {},
+    create: {
+      slug: "finance",
+      name: "Personal Finance Tracker",
+      description:
+        "Track income, expenses, and budgets with beautiful charts and reports. Perfect for personal financial management.",
+      icon: "💰",
+      primaryColor: "#10b981",
+      version: "1.0.0",
+      isActive: true,
+      isPublic: true,
+      features: [
+        "dashboard",
+        "transactions",
+        "reports",
+        "pdf_export",
+        "charts",
+      ],
+      configSchema: {
+        requiredSheets: [
+          {
+            name: "Transactions",
+            displayName: "Transactions",
+            columns: [
+              { key: "date", label: "Date", type: "date", required: true },
+              {
+                key: "description",
+                label: "Description",
+                type: "string",
+                required: true,
+              },
+              {
+                key: "category",
+                label: "Category",
+                type: "enum",
+                options: [
+                  "Salary",
+                  "Freelance",
+                  "Food",
+                  "Transport",
+                  "Bills",
+                  "Entertainment",
+                  "Shopping",
+                  "Healthcare",
+                  "Other",
+                ],
+                required: true,
+              },
+              {
+                key: "type",
+                label: "Type",
+                type: "enum",
+                options: ["income", "expense"],
+                required: true,
+              },
+              {
+                key: "amount",
+                label: "Amount",
+                type: "number",
+                required: true,
+                min: 0,
+              },
+            ],
+          },
+        ],
+        ui: {
+          layout: "sidebar",
+          pages: ["dashboard", "transactions", "reports"],
+        },
+        features: {
+          dashboard: {
+            enabled: true,
+            widgets: [
+              "income_expense_summary",
+              "category_breakdown",
+              "recent_transactions",
+            ],
+          },
+          reports: {
+            enabled: true,
+            types: ["monthly_statement"],
+          },
+          export: {
+            pdf: true,
+            csv: true,
+          },
+        },
+      },
+    },
+  });
+
+  const inventoryTemplate = await prisma.template.upsert({
+    where: { slug: "inventory" },
+    update: {},
+    create: {
+      slug: "inventory",
+      name: "Small Business Inventory & Billing",
+      description:
+        "Manage products, create invoices, and track sales. Perfect for small shops and businesses.",
+      icon: "📦",
+      primaryColor: "#3b82f6",
+      version: "1.0.0",
+      isActive: true,
+      isPublic: true,
+      features: [
+        "dashboard",
+        "products",
+        "invoices",
+        "customers",
+        "reports",
+        "pdf_export",
+      ],
+      configSchema: {
+        requiredSheets: [
+          {
+            name: "Products",
+            displayName: "Products Inventory",
+            columns: [
+              {
+                key: "product_id",
+                label: "Product ID",
+                type: "auto-increment",
+                required: true,
+              },
+              {
+                key: "name",
+                label: "Product Name",
+                type: "string",
+                required: true,
+              },
+              {
+                key: "category",
+                label: "Category",
+                type: "string",
+                required: false,
+              },
+              {
+                key: "price",
+                label: "Price",
+                type: "number",
+                required: true,
+                min: 0,
+              },
+              {
+                key: "stock",
+                label: "Stock",
+                type: "integer",
+                required: true,
+                default: 0,
+                min: 0,
+              },
+              {
+                key: "min_stock",
+                label: "Min Stock Alert",
+                type: "integer",
+                default: 5,
+                min: 0,
+              },
+            ],
+          },
+          {
+            name: "Invoices",
+            displayName: "Sales Invoices",
+            columns: [
+              {
+                key: "invoice_no",
+                label: "Invoice #",
+                type: "auto-increment",
+                prefix: "INV-",
+              },
+              { key: "date", label: "Date", type: "date", required: true },
+              {
+                key: "customer_name",
+                label: "Customer",
+                type: "string",
+                required: true,
+              },
+              { key: "items", label: "Items", type: "json", required: true },
+              {
+                key: "subtotal",
+                label: "Subtotal",
+                type: "number",
+                computed: true,
+              },
+              { key: "tax", label: "Tax %", type: "number", default: 18 },
+              { key: "total", label: "Total", type: "number", computed: true },
+              {
+                key: "status",
+                label: "Status",
+                type: "enum",
+                options: ["Unpaid", "Partial", "Paid"],
+                default: "Unpaid",
+              },
+            ],
+          },
+        ],
+        ui: {
+          layout: "sidebar",
+          pages: ["dashboard", "products", "invoices", "customers", "reports"],
+        },
+        features: {
+          dashboard: {
+            enabled: true,
+            widgets: [
+              "revenue_chart",
+              "low_stock_alerts",
+              "recent_invoices",
+              "top_products",
+            ],
+          },
+          invoices: {
+            builder: true,
+            preview: true,
+            pdf_export: true,
+            print: true,
+          },
+          reports: {
+            enabled: true,
+            types: ["sales_report", "inventory_report", "tax_summary"],
+          },
+        },
+      },
+    },
+  });
+
+  console.log("✅ Created templates:");
+  console.log(`   - ${financeTemplate.name} (${financeTemplate.slug})`);
+  console.log(`   - ${inventoryTemplate.name} (${inventoryTemplate.slug})\n`);
+
+  // ═══════════════════════════════════════════════════
+  // SUMMARY
   // ═══════════════════════════════════════════════════
 
   const tierCount = await prisma.tier.count();
   const adminCount = await prisma.admin.count();
   const userCount = await prisma.user.count();
+  const templateCount = await prisma.template.count();
 
   console.log("📊 Database seeding complete!");
   console.log("═══════════════════════════════════════");
-  console.log(`Tiers:  ${tierCount}`);
-  console.log(`Admins: ${adminCount}`);
-  console.log(`Users:  ${userCount}`);
+  console.log(`Tiers:     ${tierCount}`);
+  console.log(`Admins:    ${adminCount}`);
+  console.log(`Users:     ${userCount}`);
+  console.log(`Templates: ${templateCount}`);
   console.log("═══════════════════════════════════════\n");
 }
 
