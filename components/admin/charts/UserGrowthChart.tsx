@@ -29,7 +29,7 @@ export default function UserGrowthChart({ data }: UserGrowthChartProps) {
   }
 
   return (
-    <div className="h-64">
+    <div style={{ width: '100%', height: 256 }}>
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart
           data={data}
