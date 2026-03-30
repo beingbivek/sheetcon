@@ -1,4 +1,4 @@
-# SheetFlow
+# SheetCon
 
 > Transform your Google Sheets into beautiful web applications
 
@@ -6,9 +6,9 @@
 [![Next.js](https://img.shields.io/badge/Next.js-14-black)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)](https://www.typescriptlang.org/)
 
-## 🚀 What is SheetFlow?
+## 🚀 What is SheetCon?
 
-SheetFlow turns your Google Sheets into powerful web applications in minutes. Choose from professional templates for inventory management, invoicing, personal finance tracking, and more. Your data stays in your sheets—we just make it beautiful and functional.
+SheetCon turns your Google Sheets into powerful web applications in minutes. Choose from professional templates for inventory management, invoicing, personal finance tracking, and more. Your data stays in your sheets—we just make it beautiful and functional.
 
 ### ✨ Features
 
@@ -33,8 +33,8 @@ SheetFlow turns your Google Sheets into powerful web applications in minutes. Ch
 
 # Clone the repository
 ```bash
-git clone https://github.com/yourusername/sheetflow.git
-cd sheetflow
+git clone https://github.com/yourusername/SheetCon.git
+cd SheetCon
 ```
 # Install dependencies
 ```
@@ -93,8 +93,8 @@ This project is licensed under the MIT License — see the `LICENSE` file for de
 
 
 ## 📧 Contact
-- Email: support@sheetflow.app
-- Twitter: @sheetflow
+- Email: support@SheetCon.app
+- Twitter: @SheetCon
 - Discord: Join our community
 
 
