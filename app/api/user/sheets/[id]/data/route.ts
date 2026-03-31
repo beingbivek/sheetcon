@@ -4,9 +4,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/db';
-import { mockDataStore } from '@/lib/mock-data-store';
+import { readTransactions, appendTransaction } from '@/lib/google-sheet';
 
-// GET - Fetch all transactions
+// GET - Fetch all transactions from Google Sheet
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -24,6 +24,10 @@ export async function GET(
       where: {
         id,
         user: { email: session.user.email! },
+        isActive: true,
+      },
+      include: {
+        user: true,
       },
     });
 
@@ -31,12 +35,43 @@ export async function GET(
       return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
     }
 
-    // Get transactions from mock store
-    const transactions = mockDataStore.getTransactions(id);
+    // Read transactions from Google Sheet
+    const transactions = await readTransactions(
+      connection.user.id,
+      connection.spreadsheetId
+    );
+
+    // Update last synced
+    await prisma.sheetConnection.update({
+      where: { id: connection.id },
+      data: { 
+        lastSyncedAt: new Date(),
+        syncStatus: 'ACTIVE',
+        syncError: null,
+      },
+    });
 
     return NextResponse.json({ transactions });
   } catch (error: any) {
     console.error('Error fetching data:', error);
+
+    // Update sync error status
+    const { id } = await params;
+    await prisma.sheetConnection.update({
+      where: { id },
+      data: { 
+        syncStatus: 'ERROR',
+        syncError: error.message,
+      },
+    }).catch(() => {}); // Ignore if update fails
+
+    if (error.message?.includes('invalid_grant') || error.message?.includes('Token')) {
+      return NextResponse.json(
+        { error: 'Google session expired. Please sign out and sign in again.' },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json(
       { error: error.message || 'Failed to fetch data' },
       { status: 500 }
@@ -44,7 +79,7 @@ export async function GET(
   }
 }
 
-// POST - Add new transaction
+// POST - Add new transaction to Google Sheet
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -58,11 +93,20 @@ export async function POST(
     const { id } = await params;
     const body = await request.json();
 
+    // Validate required fields
+    if (!body.date || !body.description || !body.category || !body.type || body.amount === undefined) {
+      return NextResponse.json(
+        { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
     // Verify connection
     const connection = await prisma.sheetConnection.findFirst({
       where: {
         id,
         user: { email: session.user.email! },
+        isActive: true,
       },
       include: { user: { include: { tier: true } } },
     });
@@ -73,6 +117,24 @@ export async function POST(
 
     // Check CRUD limits
     const user = connection.user;
+    
+    // Reset daily count if new day
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const lastReset = new Date(user.lastCrudReset);
+    lastReset.setHours(0, 0, 0, 0);
+
+    if (today > lastReset) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          crudCountToday: 0,
+          lastCrudReset: new Date(),
+        },
+      });
+      user.crudCountToday = 0;
+    }
+
     if (user.tier.maxCrudPerDay !== -1 && user.crudCountToday >= user.tier.maxCrudPerDay) {
       return NextResponse.json(
         { error: 'Daily CRUD limit reached. Upgrade your plan to continue.' },
@@ -80,8 +142,18 @@ export async function POST(
       );
     }
 
-    // Add transaction using mock store
-    const newTransaction = mockDataStore.addTransaction(id, body);
+    // Add transaction to Google Sheet
+    const newTransaction = await appendTransaction(
+      user.id,
+      connection.spreadsheetId,
+      {
+        date: body.date,
+        description: body.description,
+        category: body.category,
+        type: body.type,
+        amount: parseFloat(body.amount),
+      }
+    );
 
     // Increment CRUD count
     await prisma.user.update({
@@ -91,9 +163,23 @@ export async function POST(
       },
     });
 
+    // Update last synced
+    await prisma.sheetConnection.update({
+      where: { id: connection.id },
+      data: { lastSyncedAt: new Date() },
+    });
+
     return NextResponse.json({ success: true, transaction: newTransaction });
   } catch (error: any) {
     console.error('Error adding transaction:', error);
+
+    if (error.message?.includes('invalid_grant') || error.message?.includes('Token')) {
+      return NextResponse.json(
+        { error: 'Google session expired. Please sign out and sign in again.' },
+        { status: 401 }
+      );
+    }
+
     return NextResponse.json(
       { error: error.message || 'Failed to add transaction' },
       { status: 500 }

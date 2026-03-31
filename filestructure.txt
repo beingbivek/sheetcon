@@ -1,0 +1,238 @@
+E:\WORK\SHEETCON
+�   .env
+�   .gitignore
+�   AGENTS.md
+�   CLAUDE.md
+�   eslint.config.mjs
+�   filestructure.txt
+�   next-env.d.ts
+�   next.config.ts
+�   package-lock.json
+�   package.json
+�   postcss.config.mjs
+�   README.md
+�   test-db.ts
+�   tsconfig.json
+�      
++---app
+�   �   favicon.ico
+�   �   globals.css
+�   �   layout.tsx
+�   �   page.tsx
+�   �   
+�   +---(auth)
+�   �   +---admin-login
+�   �   �       page.tsx
+�   �   �       
+�   �   +---login
+�   �   �       page.tsx
+�   �   �       
+�   �   +---register
+�   �           page.tsx
+�   �           
+�   +---admin
+�   �   �   layout.tsx
+�   �   �   page.tsx
+�   �   �   
+�   �   +---analytics
+�   �   �       page.tsx
+�   �   �       
+�   �   +---templates
+�   �   �   �   page.tsx
+�   �   �   �   
+�   �   �   +---new
+�   �   �   �       page.tsx
+�   �   �   �       
+�   �   �   +---[id]
+�   �   �       �   page.tsx
+�   �   �       �   
+�   �   �       +---edit
+�   �   �               page.tsx
+�   �   �               
+�   �   +---tiers
+�   �   �   �   page.tsx
+�   �   �   �   
+�   �   �   +---new
+�   �   �   �       page.tsx
+�   �   �   �       
+�   �   �   +---[id]
+�   �   �       �   not-found.tsx
+�   �   �       �   page.tsx
+�   �   �       �   
+�   �   �       +---edit
+�   �   �               page.tsx
+�   �   �               
+�   �   +---users
+�   �       �   page.tsx
+�   �       �   
+�   �       +---[id]
+�   �           �   page.tsx
+�   �           �   
+�   �           +---edit
+�   �                   page.tsx
+�   �                   
+�   +---api
+�   �   +---admin
+�   �   �   +---templates
+�   �   �   �   �   route.ts
+�   �   �   �   �   
+�   �   �   �   +---[id]
+�   �   �   �       �   route.ts
+�   �   �   �       �   
+�   �   �   �       +---toggle
+�   �   �   �               route.ts
+�   �   �   �               
+�   �   �   +---tiers
+�   �   �   �   �   route.ts
+�   �   �   �   �   
+�   �   �   �   +---[id]
+�   �   �   �           route.ts
+�   �   �   �           
+�   �   �   +---users
+�   �   �       �   route.ts
+�   �   �       �   
+�   �   �       +---[id]
+�   �   �           �   route.ts
+�   �   �           �   
+�   �   �           +---ban
+�   �   �           �       route.ts
+�   �   �           �       
+�   �   �           +---change-tier
+�   �   �           �       route.ts
+�   �   �           �       
+�   �   �           +---unban
+�   �   �                   route.ts
+�   �   �                   
+�   �   +---auth
+�   �   �   +---[...nextauth]
+�   �   �           route.ts
+�   �   �           
+�   �   +---sheets
+�   �   �   +---delete
+�   �   �   �       route.ts
+�   �   �   �       
+�   �   �   +---metadata
+�   �   �   �       route.ts
+�   �   �   �       
+�   �   �   +---read
+�   �   �   �       route.ts
+�   �   �   �       
+�   �   �   +---update
+�   �   �   �       route.ts
+�   �   �   �       
+�   �   �   +---write
+�   �   �           route.ts
+�   �   �           
+�   �   +---user
+�   �       +---sheets
+�   �           +---connect
+�   �           �       route.ts
+�   �           �       
+�   �           +---list
+�   �           �       route.ts
+�   �           �       
+�   �           +---[id]
+�   �               +---data
+�   �                   �   route.ts
+�   �                   �   
+�   �                   +---[transactionId]
+�   �                           route.ts
+�   �                           
+�   +---dashboard
+�       �   layout.tsx
+�       �   page.tsx
+�       �   
+�       +---connect
+�       �       page.tsx
+�       �       
+�       +---sheets
+�           +---[id]
+�                   page.tsx
+�                   
++---components
+�   +---admin
+�   �   �   AdminHeader.tsx
+�   �   �   AdminSidebar.tsx
+�   �   �   BanUserButton.tsx
+�   �   �   ChangeTierButton.tsx
+�   �   �   DeleteTierButton.tsx
+�   �   �   TemplateForm.tsx
+�   �   �   TierForm.tsx
+�   �   �   ToggleTemplateStatus.tsx
+�   �   �   UserForm.tsx
+�   �   �   
+�   �   +---charts
+�   �           TierDistributionChart.tsx
+�   �           UsageChart.tsx
+�   �           UserGrowthChart.tsx
+�   �           
+�   +---templates
+�   �   +---finance
+�   �   �       FinanceApp.tsx
+�   �   �       FinanceDashboard.tsx
+�   �   �       MonthlyReport.tsx
+�   �   �       TransactionForm.tsx
+�   �   �       TransactionList.tsx
+�   �   �       
+�   �   +---inventory
+�   �           InventoryApp.tsx
+�   �           
+�   +---user
+�           SheetConnectionWizard.tsx
+�           UserHeader.tsx
+�           UserSidebar.tsx
+�           
++---lib
+�       auth-helpers.ts
+�       auth.ts
+�       db.ts
+�       google-sheet.ts
+�       mock-data-store.ts
+�  
+�   +---.prisma
+�   �   +---client
+�   �           client.d.ts
+�   �           client.js
+�   �           default.d.ts
+�   �           default.js
+�   �           edge.d.ts
+�   �           edge.js
+�   �           index-browser.js
+�   �           index.d.ts
+�   �           index.js
+�   �           package.json
+�   �           query_engine-windows.dll.node
+�   �           query_engine_bg.js
+�   �           query_engine_bg.wasm
+�   �           schema.prisma
+�   �           wasm-edge-light-loader.mjs
+�   �           wasm-worker-loader.mjs
+�   �           wasm.d.ts
+�   �           wasm.js
+�   �             
++---prisma
+�   �   schema.prisma
+�   �   seed.ts
+�   �   
+�   +---migrations
+�       �   migration_lock.toml
+�       �   
+�       +---20260329083323_init
+�       �       migration.sql
+�       �       
+�       +---20260329161023_add_ban_fields
+�       �       migration.sql
+�       �       
+�       +---20260330155350_add_template_model
+�               migration.sql
+�               
++---public
+�       file.svg
+�       globe.svg
+�       next.svg
+�       vercel.svg
+�       window.svg
+�       
++---types
+        next-auth.d.ts
+        
