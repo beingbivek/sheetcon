@@ -9,6 +9,7 @@ import {
   getSpreadsheetMetadata,
   initializeExistingSheet,
 } from '@/lib/google-sheet';
+import { createInventorySpreadsheet } from '@/lib/google-sheet-inventory';
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,6 +25,15 @@ export async function POST(request: NextRequest) {
     if (!method || !templateId) {
       return NextResponse.json(
         { error: 'Missing required fields' },
+        { status: 400 }
+      );
+    }
+
+    // Validate templateId
+    const validTemplates = ['finance', 'inventory'];
+    if (!validTemplates.includes(templateId)) {
+      return NextResponse.json(
+        { error: 'Invalid template ID' },
         { status: 400 }
       );
     }
@@ -61,10 +71,16 @@ export async function POST(request: NextRequest) {
     let finalSpreadsheetUrl: string;
 
     if (method === 'create') {
-      // Create a new Google Sheet
-      const sheetTitle = sheetName || `SheetCon - ${templateId === 'finance' ? 'Finance Tracker' : 'Inventory'} - ${new Date().toLocaleDateString()}`;
+      // Create a new Google Sheet based on template
+      const sheetTitle = sheetName || `SheetCon - ${templateId === 'finance' ? 'Finance Tracker' : 'Inventory Manager'} - ${new Date().toLocaleDateString()}`;
       
-      const result = await createFinanceSpreadsheet(user.id, sheetTitle);
+      let result: { spreadsheetId: string; spreadsheetUrl: string };
+      
+      if (templateId === 'inventory') {
+        result = await createInventorySpreadsheet(user.id, sheetTitle);
+      } else {
+        result = await createFinanceSpreadsheet(user.id, sheetTitle);
+      }
       
       finalSpreadsheetId = result.spreadsheetId;
       finalSpreadsheetName = sheetTitle;
@@ -97,7 +113,10 @@ export async function POST(request: NextRequest) {
       const metadata = await getSpreadsheetMetadata(user.id, sheetId);
       
       // Initialize with headers if needed
-      await initializeExistingSheet(user.id, sheetId, 'Sheet1');
+      if (templateId === 'finance') {
+        await initializeExistingSheet(user.id, sheetId, 'Sheet1');
+      }
+      // For inventory, user needs to use "Create New" as it requires multiple sheets
 
       finalSpreadsheetId = sheetId;
       finalSpreadsheetName = sheetName || metadata.title;
@@ -131,7 +150,6 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error connecting sheet:', error);
 
-    // Handle specific errors
     if (error.message?.includes('invalid_grant') || error.message?.includes('Token')) {
       return NextResponse.json(
         { error: 'Google session expired. Please sign out and sign in again.' },

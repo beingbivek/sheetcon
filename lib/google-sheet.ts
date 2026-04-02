@@ -493,3 +493,6 @@ export function extractSpreadsheetId(urlOrId: string): string {
 
   throw new Error('Invalid Google Sheets URL');
 }
+
+// Re-export inventory functions for convenience
+export * from './google-sheet-inventory';

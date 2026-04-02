@@ -42,7 +42,23 @@ export default async function SheetAppPage({
   if (connection.templateId === 'finance') {
     return <FinanceApp connection={connection} user={connection.user} />;
   } else if (connection.templateId === 'inventory') {
-    return <InventoryApp connection={connection} user={connection.user} />;
+    return (
+      <InventoryApp
+        connection={{
+          id: connection.id,
+          spreadsheetName: connection.spreadsheetName,
+          spreadsheetId: connection.spreadsheetId,
+          spreadsheetUrl: connection.spreadsheetUrl || '',
+        }}
+        user={{
+          tier: {
+            exportToPdf: connection.user.tier.exportToPdf,
+            maxCrudPerDay: connection.user.tier.maxCrudPerDay,
+          },
+          crudCountToday: connection.user.crudCountToday,
+        }}
+      />
+    );
   } else {
     return (
       <div className="text-center py-12">
