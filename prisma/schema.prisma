@@ -70,7 +70,7 @@ model Tier {
 }
 
 // ═══════════════════════════════════════════════════
-// USER MODEL (Updated)
+// USER MODEL (UPDATED with token fields)
 // ═══════════════════════════════════════════════════
 
 model User {
@@ -84,25 +84,26 @@ model User {
   tierId String
   tier   Tier   @relation(fields: [tierId], references: [id])
 
-  // OAuth tokens
-  googleId     String? @unique
-  accessToken  String? @db.Text
-  refreshToken String? @db.Text
+  // OAuth tokens - UPDATED
+  googleId       String?   @unique
+  accessToken    String?   @db.Text
+  refreshToken   String?   @db.Text
+  tokenExpiresAt DateTime? // NEW
 
   // Status
   isActive      Boolean @default(true)
   emailVerified Boolean @default(false)
 
-  // Ban system (NEW FIELDS)
+  // Ban system
   isBanned  Boolean @default(false)
   banReason String?
 
   // Activity tracking
   lastLoginAt DateTime?
 
-  // Usage tracking
-  crudCountToday Int      @default(0)
-  lastCrudReset  DateTime @default(now())
+  // Usage tracking - UPDATED field name
+  crudCountToday  Int      @default(0)
+  lastCrudResetAt DateTime @default(now()) // Renamed from lastCrudReset
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -112,10 +113,31 @@ model User {
 
   @@index([email])
   @@index([tierId])
+  @@index([googleId])
 }
 
 // ═══════════════════════════════════════════════════
-// SHEET CONNECTION MODEL (Add if not exists)
+// SHEET OPERATION MODEL (NEW)
+// ═══════════════════════════════════════════════════
+
+model SheetOperation {
+  id           String  @id @default(cuid())
+  userId       String
+  sheetId      String
+  operation    String // READ, WRITE, UPDATE, DELETE
+  rowsAffected Int     @default(0)
+  success      Boolean
+  errorMessage String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([sheetId])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════
+// SHEET CONNECTION MODEL (UPDATED)
 // ═══════════════════════════════════════════════════
 
 model SheetConnection {
@@ -123,25 +145,27 @@ model SheetConnection {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Sheet Details
-  sheetType       String // "google_sheets", "excel_online"
+  // Sheet Details - UPDATED
+  sheetType       String // FINANCE, INVENTORY, etc.
   spreadsheetId   String
   spreadsheetName String
-  spreadsheetUrl  String
+  spreadsheetUrl  String? // NEW
+  sheetName       String? // NEW - specific tab name (e.g., "Sheet1")
 
-  // Template Lock
+  // Template - UPDATED with relation
   templateId     String?
+  template       Template? @relation(fields: [templateId], references: [id]) // NEW RELATION
   templateLocked Boolean   @default(false)
   lockedAt       DateTime?
 
   // Column Mappings
   columnMappings Json?
 
-  // Status
-  isActive     Boolean   @default(true)
-  lastSyncedAt DateTime?
-  syncStatus   String    @default("PENDING")
-  syncError    String?
+  // Status - UPDATED
+  isActive         Boolean   @default(true)
+  lastSyncAt       DateTime? // Renamed from lastSyncedAt
+  syncStatus       String    @default("PENDING")
+  syncErrorMessage String?   // Renamed from syncError
 
   // Metadata
   createdAt DateTime @default(now())
@@ -149,10 +173,12 @@ model SheetConnection {
 
   @@unique([userId, spreadsheetId])
   @@index([userId, isActive])
+  @@index([templateId])
+  @@index([spreadsheetId])
 }
 
 // ═══════════════════════════════════════════════════
-// TEMPLATE MODEL
+// TEMPLATE MODEL (UPDATED to support relation)
 // ═══════════════════════════════════════════════════
 
 model Template {
@@ -181,6 +207,9 @@ model Template {
   // Metadata
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relations - NEW
+  sheetConnections SheetConnection[]
 
   @@index([slug])
   @@index([isActive, isPublic])
