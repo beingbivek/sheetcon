@@ -2,7 +2,9 @@
 
 'use client';
 
+import { useState } from 'react';
 import { Sale } from './InventoryApp';
+import { generateInvoicePDF, downloadPDF } from '@/lib/pdf-generator';
 
 interface InvoiceViewProps {
   sale: Sale;
@@ -12,6 +14,8 @@ interface InvoiceViewProps {
 }
 
 export default function InvoiceView({ sale, businessName, onClose, canExportPdf }: InvoiceViewProps) {
+  const [exporting, setExporting] = useState(false);
+
   const formatDate = (dateStr: string) => {
     try {
       return new Date(dateStr).toLocaleDateString('en-IN', {
@@ -28,6 +32,24 @@ export default function InvoiceView({ sale, businessName, onClose, canExportPdf 
     window.print();
   };
 
+  const handleExportPDF = async () => {
+    if (!canExportPdf) {
+      alert('PDF export is not available on your current plan. Please upgrade to access this feature.');
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const blob = await generateInvoicePDF(sale, businessName);
+      downloadPDF(blob, `${sale.invoiceNumber}.pdf`);
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <div className="p-6">
       {/* Header Actions */}
@@ -35,8 +57,33 @@ export default function InvoiceView({ sale, businessName, onClose, canExportPdf 
         <h3 className="text-xl font-semibold text-slate-900">Invoice</h3>
         <div className="flex gap-2">
           <button
+            onClick={handleExportPDF}
+            disabled={exporting || !canExportPdf}
+            className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+              canExportPdf
+                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                : 'bg-slate-200 text-slate-500 cursor-not-allowed'
+            }`}
+            title={canExportPdf ? 'Download PDF' : 'Upgrade to export PDF'}
+          >
+            {exporting ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Exporting...
+              </>
+            ) : (
+              <>
+                📄 Download PDF
+                {!canExportPdf && <span className="text-xs">(Pro)</span>}
+              </>
+            )}
+          </button>
+          <button
             onClick={handlePrint}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+            className="px-4 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 flex items-center gap-2"
           >
             🖨️ Print
           </button>

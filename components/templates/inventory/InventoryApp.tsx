@@ -319,7 +319,7 @@ export default function InventoryApp({ connection, user }: InventoryAppProps) {
       const data = await res.json();
       await fetchData();
       setModalType(null);
-      
+
       // Show invoice
       setSelectedSale(data.sale);
       setModalType('invoice');
@@ -480,11 +480,10 @@ export default function InventoryApp({ connection, user }: InventoryAppProps) {
             <button
               key={tab.key}
               onClick={() => setCurrentView(tab.key as View)}
-              className={`pb-4 border-b-2 transition-colors flex items-center gap-2 ${
-                currentView === tab.key
+              className={`pb-4 border-b-2 transition-colors flex items-center gap-2 ${currentView === tab.key
                   ? 'border-blue-600 text-blue-600 font-medium'
                   : 'border-transparent text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               <span>{tab.icon}</span>
               {tab.label}
@@ -532,10 +531,14 @@ export default function InventoryApp({ connection, user }: InventoryAppProps) {
         />
       )}
 
+
       {currentView === 'reports' && (
         <InventoryReports
           report={report}
           canExportPdf={user.tier.exportToPdf}
+          businessName={connection.spreadsheetName}
+          products={products}
+          sales={sales}
         />
       )}
 
@@ -549,7 +552,7 @@ export default function InventoryApp({ connection, user }: InventoryAppProps) {
               </h3>
               <ProductForm
                 product={editingItem}
-                onSubmit={editingItem 
+                onSubmit={editingItem
                   ? (data) => handleUpdateProduct(editingItem.id, data)
                   : handleAddProduct
                 }
