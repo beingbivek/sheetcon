@@ -1,4 +1,4 @@
-// components/user/UserSidebar.tsx
+// components/user/UserSidebar.tsx 
 
 'use client';
 
@@ -14,36 +14,12 @@ export default function UserSidebar({ session }: UserSidebarProps) {
   const pathname = usePathname();
 
   const navigation = [
-    {
-      name: 'Dashboard',
-      href: '/dashboard',
-      icon: '🏠',
-    },
-    {
-      name: 'My Sheets',
-      href: '/dashboard/sheets',
-      icon: '📊',
-    },
-    {
-      name: 'Connect Sheet',
-      href: '/dashboard/connect',
-      icon: '🔗',
-    },
-    {
-      name: 'Templates',
-      href: '/dashboard/templates',
-      icon: '📋',
-    },
-    {
-      name: 'Billing',
-      href: '/dashboard/billing',
-      icon: '💳',
-    },
-    {
-      name: 'Settings',
-      href: '/dashboard/settings',
-      icon: '⚙️',
-    },
+    { name: 'Dashboard', href: '/dashboard', icon: '🏠' },
+    { name: 'My Sheets', href: '/dashboard/sheets', icon: '📊' },
+    { name: 'Connect Sheet', href: '/dashboard/connect', icon: '🔗' },
+    { name: 'Templates', href: '/dashboard/templates', icon: '📋' },
+    { name: 'Billing', href: '/dashboard/billing', icon: '💳' },
+    { name: 'Settings', href: '/dashboard/settings', icon: '⚙️' },
   ];
 
   return (
@@ -65,16 +41,18 @@ export default function UserSidebar({ session }: UserSidebarProps) {
                 key={item.name}
                 href={item.href}
                 className={`
-                  flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-colors
-                  ${
-                    isActive
-                      ? 'bg-blue-50 text-blue-700'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  flex items-center px-3 py-2.5 text-sm font-medium rounded-lg transition-all
+                  ${isActive
+                    ? 'bg-blue-50 text-blue-700 shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }
                 `}
               >
                 <span className="mr-3 text-lg">{item.icon}</span>
-                {item.name}
+                <span className="flex-1">{item.name}</span>
+                {isActive && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
+                )}
               </Link>
             );
           })}
@@ -88,7 +66,7 @@ export default function UserSidebar({ session }: UserSidebarProps) {
                 <img
                   src={session.user.image}
                   alt={session.user.name || 'User'}
-                  className="w-10 h-10 rounded-full"
+                  className="w-10 h-10 rounded-full ring-2 ring-slate-100"
                 />
               ) : (
                 <div className="w-10 h-10 rounded-full bg-blue-600 flex items-center justify-center text-white font-semibold">
