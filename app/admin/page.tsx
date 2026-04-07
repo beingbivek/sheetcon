@@ -3,6 +3,7 @@
 import { prisma } from '@/lib/db';
 import Link from 'next/link';
 import { format } from 'date-fns';
+import QueueStatsWidget from '@/components/admin/QueueStatsWidget';
 
 export default async function AdminDashboardPage() {
   // Get this month's start
@@ -84,6 +85,13 @@ export default async function AdminDashboardPage() {
           color="yellow"
           href="/admin/settings"
         />
+      </div>
+
+      {/* ═══════════════════════════════════════════════════ */}
+      {/* NEW: API Queue Monitor Widget */}
+      {/* ═══════════════════════════════════════════════════ */}
+      <div className="mb-8">
+        <QueueStatsWidget />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

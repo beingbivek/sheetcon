@@ -1,8 +1,9 @@
 // lib/google-sheet.ts
 
-import { google, sheets_v4, drive_v3 } from 'googleapis';
+import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '@/lib/db';
+import { queueReadRequest, queueWriteRequest } from './google-sheets-queue';
 
 // ═══════════════════════════════════════════════════
 // TYPES
@@ -32,27 +33,20 @@ export interface Transaction {
   amount: number;
 }
 
-// Finance template headers
 const FINANCE_HEADERS = ['ID', 'Date', 'Description', 'Category', 'Type', 'Amount'];
 
 // ═══════════════════════════════════════════════════
-// OAUTH CLIENT HELPER
+// OAUTH CLIENT
 // ═══════════════════════════════════════════════════
 
-/**
- * Creates an authenticated OAuth2 client for a user
- */
 export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      accessToken: true,
-      refreshToken: true,
-    },
+    select: { accessToken: true, refreshToken: true },
   });
 
   if (!user || !user.accessToken) {
-    throw new Error('User not authenticated with Google. Please sign in again.');
+    throw new Error('User not authenticated with Google.');
   }
 
   const oauth2Client = new OAuth2Client(
@@ -66,7 +60,6 @@ export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
     refresh_token: user.refreshToken,
   });
 
-  // Handle token refresh
   oauth2Client.on('tokens', async (tokens) => {
     if (tokens.access_token) {
       await prisma.user.update({
@@ -83,38 +76,68 @@ export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
 }
 
 // ═══════════════════════════════════════════════════
-// GOOGLE DRIVE FUNCTIONS
+// RAW (INTERNAL) FUNCTIONS
+// No queue - used internally by other queued ops
+// to prevent DEADLOCK
 // ═══════════════════════════════════════════════════
 
 /**
- * List all Google Sheets in user's Drive
+ * RAW read transactions - bypasses queue
+ * ONLY use from within other queued operations
  */
-export async function listUserSpreadsheets(userId: string): Promise<GoogleSheetFile[]> {
+async function _readTransactionsRaw(
+  userId: string,
+  spreadsheetId: string,
+  sheetName: string = 'Transactions'
+): Promise<Transaction[]> {
   const auth = await getOAuth2Client(userId);
-  const drive = google.drive({ version: 'v3', auth });
+  const sheets = google.sheets({ version: 'v4', auth });
 
-  const response = await drive.files.list({
-    q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-    fields: 'files(id, name, webViewLink)',
-    orderBy: 'modifiedTime desc',
-    pageSize: 50,
-  });
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!A2:F`,
+    });
 
-  return (response.data.files || []).map((file) => ({
-    id: file.id!,
-    name: file.name!,
-    webViewLink: file.webViewLink || undefined,
-  }));
+    const rows = res.data.values || [];
+
+    return rows.map((row) => ({
+      id: row[0] || '',
+      date: row[1] || '',
+      description: row[2] || '',
+      category: row[3] || '',
+      type: (row[4] || 'expense') as 'income' | 'expense',
+      amount: parseFloat(row[5]) || 0,
+    })).filter(t => t.id);
+  } catch {
+    // Fallback: try Sheet1 if named sheet not found
+    try {
+      const fallbackRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: 'Sheet1!A2:F',
+      });
+
+      const rows = fallbackRes.data.values || [];
+
+      return rows.map((row) => ({
+        id: row[0] || '',
+        date: row[1] || '',
+        description: row[2] || '',
+        category: row[3] || '',
+        type: (row[4] || 'expense') as 'income' | 'expense',
+        amount: parseFloat(row[5]) || 0,
+      })).filter(t => t.id);
+    } catch {
+      return [];
+    }
+  }
 }
 
-// ═══════════════════════════════════════════════════
-// GOOGLE SHEETS FUNCTIONS
-// ═══════════════════════════════════════════════════
-
 /**
- * Get spreadsheet metadata
+ * RAW get metadata - bypasses queue
+ * ONLY use from within other queued operations
  */
-export async function getSpreadsheetMetadata(
+async function _getSpreadsheetMetadataRaw(
   userId: string,
   spreadsheetId: string
 ): Promise<SheetMetadata> {
@@ -136,234 +159,196 @@ export async function getSpreadsheetMetadata(
   };
 }
 
-/**
- * Create a new spreadsheet with finance template structure
- */
+// ═══════════════════════════════════════════════════
+// QUEUED PUBLIC FUNCTIONS
+// ═══════════════════════════════════════════════════
+
+// ─── DRIVE (READ) ─────────────────────────────────
+
+export async function listUserSpreadsheets(userId: string): Promise<GoogleSheetFile[]> {
+  return queueReadRequest(userId, async () => {
+    const auth = await getOAuth2Client(userId);
+    const drive = google.drive({ version: 'v3', auth });
+
+    const response = await drive.files.list({
+      q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+      fields: 'files(id, name, webViewLink)',
+      orderBy: 'modifiedTime desc',
+      pageSize: 50,
+    });
+
+    return (response.data.files || []).map((file) => ({
+      id: file.id!,
+      name: file.name!,
+      webViewLink: file.webViewLink || undefined,
+    }));
+  });
+}
+
+// ─── METADATA (READ) ──────────────────────────────
+
+export async function getSpreadsheetMetadata(
+  userId: string,
+  spreadsheetId: string
+): Promise<SheetMetadata> {
+  return queueReadRequest(userId, async () => {
+    return _getSpreadsheetMetadataRaw(userId, spreadsheetId);
+  });
+}
+
+// ─── CREATE FINANCE SPREADSHEET (WRITE - HIGH) ────
+
 export async function createFinanceSpreadsheet(
   userId: string,
   title: string
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
+  return queueWriteRequest(userId, async () => {
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-  // Create spreadsheet
-  const response = await sheets.spreadsheets.create({
-    requestBody: {
-      properties: {
-        title,
-      },
-      sheets: [
-        {
-          properties: {
-            title: 'Transactions',
-            gridProperties: {
-              frozenRowCount: 1, // Freeze header row
+    const response = await sheets.spreadsheets.create({
+      requestBody: {
+        properties: { title },
+        sheets: [
+          {
+            properties: {
+              title: 'Transactions',
+              gridProperties: { frozenRowCount: 1 },
             },
           },
-        },
-      ],
-    },
-  });
+        ],
+      },
+    });
 
-  const spreadsheetId = response.data.spreadsheetId!;
-  
-  // Get the actual sheetId from the response (NOT always 0!)
-  const actualSheetId = response.data.sheets?.[0]?.properties?.sheetId;
+    const spreadsheetId = response.data.spreadsheetId!;
+    const actualSheetId = response.data.sheets?.[0]?.properties?.sheetId;
 
-  // Add headers
-  await sheets.spreadsheets.values.update({
-    spreadsheetId,
-    range: 'Transactions!A1:F1',
-    valueInputOption: 'RAW',
-    requestBody: {
-      values: [FINANCE_HEADERS],
-    },
-  });
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'Transactions!A1:F1',
+      valueInputOption: 'RAW',
+      requestBody: { values: [FINANCE_HEADERS] },
+    });
 
-  // Format header row (bold, background color) - only if we have a valid sheetId
-  if (actualSheetId !== undefined) {
-    try {
-      await sheets.spreadsheets.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          requests: [
-            {
-              repeatCell: {
-                range: {
-                  sheetId: actualSheetId,  // Use actual sheetId from response
-                  startRowIndex: 0,
-                  endRowIndex: 1,
-                },
-                cell: {
-                  userEnteredFormat: {
-                    backgroundColor: { red: 0.2, green: 0.5, blue: 0.9 },
-                    textFormat: { bold: true, foregroundColor: { red: 1, green: 1, blue: 1 } },
+    if (actualSheetId !== undefined) {
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [
+              {
+                repeatCell: {
+                  range: {
+                    sheetId: actualSheetId,
+                    startRowIndex: 0,
+                    endRowIndex: 1,
                   },
+                  cell: {
+                    userEnteredFormat: {
+                      backgroundColor: { red: 0.2, green: 0.5, blue: 0.9 },
+                      textFormat: {
+                        bold: true,
+                        foregroundColor: { red: 1, green: 1, blue: 1 },
+                      },
+                    },
+                  },
+                  fields: 'userEnteredFormat(backgroundColor,textFormat)',
                 },
-                fields: 'userEnteredFormat(backgroundColor,textFormat)',
               },
-            },
-          ],
-        },
-      });
-    } catch (formatError) {
-      // If formatting fails, log but don't fail the whole operation
-      console.warn('Failed to format header row:', formatError);
+            ],
+          },
+        });
+      } catch (formatError) {
+        console.warn('Failed to format header row:', formatError);
+      }
     }
-  }
 
-  return {
-    spreadsheetId,
-    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
-  };
+    return {
+      spreadsheetId,
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
+    };
+  }, 'HIGH');
 }
 
-/**
- * Initialize an existing spreadsheet with headers if needed
- */
+// ─── INITIALIZE EXISTING SHEET (WRITE) ────────────
+
 export async function initializeExistingSheet(
   userId: string,
   spreadsheetId: string,
   sheetName: string = 'Sheet1'
 ): Promise<void> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
+  return queueWriteRequest(userId, async () => {
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-  // Check if headers exist
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: `${sheetName}!A1:F1`,
-  });
-
-  const firstRow = response.data.values?.[0] || [];
-
-  // If no headers or different headers, add our headers
-  if (firstRow.length === 0 || firstRow[0] !== 'ID') {
-    // Shift existing data down and add headers
-    await sheets.spreadsheets.values.update({
+    const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: `${sheetName}!A1:F1`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [FINANCE_HEADERS],
-      },
     });
-  }
+
+    const firstRow = response.data.values?.[0] || [];
+
+    if (firstRow.length === 0 || firstRow[0] !== 'ID') {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${sheetName}!A1:F1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [FINANCE_HEADERS] },
+      });
+    }
+  });
 }
 
-/**
- * Read all transactions from a sheet
- */
+// ─── READ TRANSACTIONS (READ) ─────────────────────
+
 export async function readTransactions(
   userId: string,
   spreadsheetId: string,
   sheetName: string = 'Transactions'
 ): Promise<Transaction[]> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
-
-  // Try the specified sheet name first, fallback to Sheet1
-  let range = `${sheetName}!A2:F`;
-  
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range,
-    });
-
-    const rows = response.data.values || [];
-
-    return rows.map((row) => ({
-      id: row[0] || '',
-      date: row[1] || '',
-      description: row[2] || '',
-      category: row[3] || '',
-      type: (row[4] || 'expense') as 'income' | 'expense',
-      amount: parseFloat(row[5]) || 0,
-    })).filter(t => t.id); // Filter out empty rows
-  } catch (error: any) {
-    // If sheet name doesn't exist, try Sheet1
-    if (error.message?.includes('Unable to parse range')) {
-      const fallbackResponse = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: 'Sheet1!A2:F',
-      });
-
-      const rows = fallbackResponse.data.values || [];
-
-      return rows.map((row) => ({
-        id: row[0] || '',
-        date: row[1] || '',
-        description: row[2] || '',
-        category: row[3] || '',
-        type: (row[4] || 'expense') as 'income' | 'expense',
-        amount: parseFloat(row[5]) || 0,
-      })).filter(t => t.id);
-    }
-    throw error;
-  }
+  return queueReadRequest(userId, async () => {
+    return _readTransactionsRaw(userId, spreadsheetId, sheetName);
+  });
 }
 
-/**
- * Append a new transaction to the sheet
- */
+// ─── APPEND TRANSACTION (WRITE - HIGH) ────────────
+
 export async function appendTransaction(
   userId: string,
   spreadsheetId: string,
   transaction: Omit<Transaction, 'id'>,
   sheetName: string = 'Transactions'
 ): Promise<Transaction> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
+  return queueWriteRequest(userId, async () => {
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-  const id = `TXN-${Date.now()}`;
-  const row = [
-    id,
-    transaction.date,
-    transaction.description,
-    transaction.category,
-    transaction.type,
-    transaction.amount,
-  ];
+    const id = `TXN-${Date.now()}`;
 
-  // Try specified sheet, fallback to Sheet1
-  let range = `${sheetName}!A:F`;
-  
-  try {
+    // FIX: Explicit field order instead of Object.values()
+    const row = [
+      id,
+      transaction.date,
+      transaction.description,
+      transaction.category,
+      transaction.type,
+      transaction.amount,
+    ];
+
     await sheets.spreadsheets.values.append({
       spreadsheetId,
-      range,
+      range: `${sheetName}!A:F`,
       valueInputOption: 'USER_ENTERED',
       insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values: [row],
-      },
+      requestBody: { values: [row] },
     });
-  } catch (error: any) {
-    if (error.message?.includes('Unable to parse range')) {
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: 'Sheet1!A:F',
-        valueInputOption: 'USER_ENTERED',
-        insertDataOption: 'INSERT_ROWS',
-        requestBody: {
-          values: [row],
-        },
-      });
-    } else {
-      throw error;
-    }
-  }
 
-  return {
-    id,
-    ...transaction,
-  };
+    return { id, ...transaction };
+  }, 'HIGH');
 }
 
-/**
- * Update an existing transaction
- */
+// ─── UPDATE TRANSACTION (WRITE - HIGH) ────────────
+
 export async function updateTransaction(
   userId: string,
   spreadsheetId: string,
@@ -371,128 +356,97 @@ export async function updateTransaction(
   updates: Partial<Transaction>,
   sheetName: string = 'Transactions'
 ): Promise<Transaction | null> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
+  return queueWriteRequest(userId, async () => {
+    // FIX: Use RAW function to prevent DEADLOCK
+    const transactions = await _readTransactionsRaw(userId, spreadsheetId, sheetName);
+    const index = transactions.findIndex(t => t.id === transactionId);
 
-  // Read all transactions to find the row
-  const transactions = await readTransactions(userId, spreadsheetId, sheetName);
-  const index = transactions.findIndex((t) => t.id === transactionId);
+    if (index === -1) return null;
 
-  if (index === -1) {
-    return null;
-  }
+    const updated = { ...transactions[index], ...updates };
+    const rowNumber = index + 2;
 
-  const rowNumber = index + 2; // +1 for header, +1 for 0-based index
-  const updatedTransaction = { ...transactions[index], ...updates, id: transactionId };
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-  const row = [
-    updatedTransaction.id,
-    updatedTransaction.date,
-    updatedTransaction.description,
-    updatedTransaction.category,
-    updatedTransaction.type,
-    updatedTransaction.amount,
-  ];
-
-  // Try specified sheet, fallback to Sheet1
-  let range = `${sheetName}!A${rowNumber}:F${rowNumber}`;
-  
-  try {
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range,
+      range: `${sheetName}!A${rowNumber}:F${rowNumber}`,
       valueInputOption: 'USER_ENTERED',
       requestBody: {
-        values: [row],
+        values: [[
+          updated.id,
+          updated.date,
+          updated.description,
+          updated.category,
+          updated.type,
+          updated.amount,
+        ]],
       },
     });
-  } catch (error: any) {
-    if (error.message?.includes('Unable to parse range')) {
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: `Sheet1!A${rowNumber}:F${rowNumber}`,
-        valueInputOption: 'USER_ENTERED',
-        requestBody: {
-          values: [row],
-        },
-      });
-    } else {
-      throw error;
-    }
-  }
 
-  return updatedTransaction;
+    return updated;
+  }, 'HIGH');
 }
 
-/**
- * Delete a transaction (clear the row)
- */
+// ─── DELETE TRANSACTION (WRITE) ───────────────────
+
 export async function deleteTransaction(
   userId: string,
   spreadsheetId: string,
   transactionId: string,
   sheetName: string = 'Transactions'
 ): Promise<boolean> {
-  const auth = await getOAuth2Client(userId);
-  const sheets = google.sheets({ version: 'v4', auth });
+  return queueWriteRequest(userId, async () => {
+    // FIX: Use RAW functions to prevent DEADLOCK
+    const transactions = await _readTransactionsRaw(userId, spreadsheetId, sheetName);
+    const index = transactions.findIndex(t => t.id === transactionId);
 
-  // Read all transactions to find the row
-  const transactions = await readTransactions(userId, spreadsheetId, sheetName);
-  const index = transactions.findIndex((t) => t.id === transactionId);
+    if (index === -1) return false;
 
-  if (index === -1) {
-    return false;
-  }
+    const metadata = await _getSpreadsheetMetadataRaw(userId, spreadsheetId);
+    // FIX: Include Sheet1 fallback
+    const sheet = metadata.sheets.find(
+      s => s.title === sheetName || s.title === 'Sheet1'
+    );
 
-  const rowNumber = index + 2; // +1 for header, +1 for 0-based index
+    if (!sheet) return false;
 
-  // Get spreadsheet metadata to find sheet ID
-  const metadata = await getSpreadsheetMetadata(userId, spreadsheetId);
-  const sheet = metadata.sheets.find(
-    (s) => s.title === sheetName || s.title === 'Sheet1'
-  );
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-  if (!sheet) {
-    return false;
-  }
-
-  // Delete the row
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId,
-    requestBody: {
-      requests: [
-        {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{
           deleteDimension: {
             range: {
               sheetId: sheet.sheetId,
               dimension: 'ROWS',
-              startIndex: rowNumber - 1, // 0-based
-              endIndex: rowNumber,
+              startIndex: index + 1,
+              endIndex: index + 2,
             },
           },
-        },
-      ],
-    },
-  });
+        }],
+      },
+    });
 
-  return true;
+    return true;
+  });
 }
 
-/**
- * Extract spreadsheet ID from URL
- */
+// ═══════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════
+
 export function extractSpreadsheetId(urlOrId: string): string {
-  if (!urlOrId.includes('/')) {
-    return urlOrId;
-  }
+  if (!urlOrId.includes('/')) return urlOrId;
 
   const match = urlOrId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (match) {
-    return match[1];
-  }
+  if (!match) throw new Error('Invalid URL');
 
-  throw new Error('Invalid Google Sheets URL');
+  return match[1];
 }
 
-// Re-export inventory functions for convenience
+// re-export inventory functions
 export * from './google-sheet-inventory';
