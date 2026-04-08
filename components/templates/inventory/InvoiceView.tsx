@@ -140,13 +140,13 @@ export default function InvoiceView({ sale, businessName, onClose, canExportPdf 
                   <td className="py-3 font-medium text-slate-900">{item.productName}</td>
                   <td className="py-3 text-center text-slate-600">{item.quantity}</td>
                   <td className="py-3 text-right text-slate-600">
-                    ₹{item.unitPrice.toLocaleString('en-IN')}
+                    NPR {item.unitPrice.toLocaleString('en-IN')}
                   </td>
                   <td className="py-3 text-right text-slate-600">
-                    ₹{item.discount.toLocaleString('en-IN')}
+                    NPR {item.discount.toLocaleString('en-IN')}
                   </td>
                   <td className="py-3 text-right font-medium text-slate-900">
-                    ₹{item.total.toLocaleString('en-IN')}
+                    NPR {item.total.toLocaleString('en-IN')}
                   </td>
                 </tr>
               ))}
@@ -159,32 +159,32 @@ export default function InvoiceView({ sale, businessName, onClose, canExportPdf 
           <div className="w-64 space-y-2">
             <div className="flex justify-between text-slate-600">
               <span>Subtotal</span>
-              <span>₹{sale.subtotal.toLocaleString('en-IN')}</span>
+              <span>NPR {sale.subtotal.toLocaleString('en-IN')}</span>
             </div>
             {sale.discountAmount > 0 && (
               <div className="flex justify-between text-green-600">
                 <span>Discount ({sale.discountPercent}%)</span>
-                <span>-₹{sale.discountAmount.toLocaleString('en-IN')}</span>
+                <span>-NPR {sale.discountAmount.toLocaleString('en-IN')}</span>
               </div>
             )}
             {sale.taxAmount > 0 && (
               <div className="flex justify-between text-slate-600">
                 <span>Tax ({sale.taxPercent}%)</span>
-                <span>+₹{sale.taxAmount.toLocaleString('en-IN')}</span>
+                <span>+NPR {sale.taxAmount.toLocaleString('en-IN')}</span>
               </div>
             )}
             <div className="flex justify-between text-lg font-bold border-t-2 border-slate-200 pt-2">
               <span>Total</span>
-              <span>₹{sale.total.toLocaleString('en-IN')}</span>
+              <span>NPR {sale.total.toLocaleString('en-IN')}</span>
             </div>
             <div className="flex justify-between text-green-600">
               <span>Paid</span>
-              <span>₹{sale.amountPaid.toLocaleString('en-IN')}</span>
+              <span>NPR {sale.amountPaid.toLocaleString('en-IN')}</span>
             </div>
             {sale.amountDue > 0 && (
               <div className="flex justify-between text-orange-600 font-semibold">
                 <span>Balance Due</span>
-                <span>₹{sale.amountDue.toLocaleString('en-IN')}</span>
+                <span>NPR {sale.amountDue.toLocaleString('en-IN')}</span>
               </div>
             )}
           </div>

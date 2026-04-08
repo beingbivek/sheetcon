@@ -192,7 +192,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
             <option value="">+ Add product...</option>
             {availableProducts.map(p => (
               <option key={p.id} value={p.id}>
-                {p.name} - ₹{p.sellingPrice} ({p.stock} in stock)
+                {p.name} - NPR {p.sellingPrice} ({p.stock} in stock)
               </option>
             ))}
           </select>
@@ -250,7 +250,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
                       />
                     </td>
                     <td className="px-4 py-2 text-right font-medium text-slate-900">
-                      ₹{item.total.toLocaleString('en-IN')}
+                      NPR {item.total.toLocaleString('en-IN')}
                     </td>
                     <td className="px-4 py-2">
                       <button
@@ -323,7 +323,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
 
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
-                Amount Paid (₹)
+                Amount Paid (NPR )
               </label>
               <input
                 type="number"
@@ -333,7 +333,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
                 value={amountPaid}
                 onChange={(e) => setAmountPaid(e.target.value)}
                 className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder={`Max: ₹${total.toFixed(2)}`}
+                placeholder={`Max: NPR ${total.toFixed(2)}`}
               />
             </div>
 
@@ -357,31 +357,31 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-slate-600">Subtotal</span>
-                <span className="font-medium">₹{subtotal.toLocaleString('en-IN')}</span>
+                <span className="font-medium">NPR {subtotal.toLocaleString('en-IN')}</span>
               </div>
               {discountAmount > 0 && (
                 <div className="flex justify-between text-green-600">
                   <span>Discount ({discountPercent}%)</span>
-                  <span>-₹{discountAmount.toLocaleString('en-IN')}</span>
+                  <span>-NPR {discountAmount.toLocaleString('en-IN')}</span>
                 </div>
               )}
               {taxAmount > 0 && (
                 <div className="flex justify-between">
                   <span className="text-slate-600">Tax ({taxPercent}%)</span>
-                  <span>+₹{taxAmount.toLocaleString('en-IN')}</span>
+                  <span>+NPR {taxAmount.toLocaleString('en-IN')}</span>
                 </div>
               )}
               <div className="border-t border-slate-200 pt-2 flex justify-between text-lg font-semibold">
                 <span>Total</span>
-                <span>₹{total.toLocaleString('en-IN')}</span>
+                <span>NPR {total.toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between text-green-600">
                 <span>Amount Paid</span>
-                <span>₹{(parseFloat(amountPaid) || 0).toLocaleString('en-IN')}</span>
+                <span>NPR {(parseFloat(amountPaid) || 0).toLocaleString('en-IN')}</span>
               </div>
               <div className="flex justify-between text-orange-600 font-medium">
                 <span>Amount Due</span>
-                <span>₹{Math.max(0, amountDue).toLocaleString('en-IN')}</span>
+                <span>NPR {Math.max(0, amountDue).toLocaleString('en-IN')}</span>
               </div>
             </div>
           </div>

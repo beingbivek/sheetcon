@@ -52,7 +52,7 @@ export default function BillingClient({ currentTier, usage, allTiers }: BillingC
             <p className="text-sm text-slate-500">Current Plan</p>
             <h2 className="text-2xl font-bold text-slate-900">{currentTier.name}</h2>
             <p className="text-lg text-blue-600 font-semibold mt-1">
-              {currentTier.price === 0 ? 'Free' : `₹${currentTier.price}/month`}
+              {currentTier.price === 0 ? 'Free' : `NPR ${currentTier.price}/month`}
             </p>
           </div>
           <div className="text-right">
@@ -145,7 +145,7 @@ export default function BillingClient({ currentTier, usage, allTiers }: BillingC
 
               <h3 className="text-xl font-bold text-slate-900">{tier.name}</h3>
               <p className="text-3xl font-bold text-slate-900 mt-2">
-                {tier.price === 0 ? 'Free' : `₹${tier.price}`}
+                {tier.price === 0 ? 'Free' : `NPR ${tier.price}`}
                 {tier.price > 0 && <span className="text-sm font-normal text-slate-500">/month</span>}
               </p>
               

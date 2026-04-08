@@ -165,21 +165,21 @@ export default function MonthlyReport({ transactions, canExportPdf }: MonthlyRep
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <p className="text-sm text-slate-500 mb-1">Total Income</p>
           <p className="text-3xl font-bold text-green-600">
-            ₹{totalIncome.toLocaleString('en-IN')}
+            NPR {totalIncome.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-slate-500 mt-2">{income.length} transactions</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <p className="text-sm text-slate-500 mb-1">Total Expenses</p>
           <p className="text-3xl font-bold text-red-600">
-            ₹{totalExpenses.toLocaleString('en-IN')}
+            NPR {totalExpenses.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-slate-500 mt-2">{expenses.length} transactions</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <p className="text-sm text-slate-500 mb-1">Net Balance</p>
           <p className={`text-3xl font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-            ₹{balance.toLocaleString('en-IN')}
+            NPR {balance.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-slate-500 mt-2">
             {balance >= 0 ? 'Surplus' : 'Deficit'}
@@ -200,7 +200,7 @@ export default function MonthlyReport({ transactions, canExportPdf }: MonthlyRep
                   <XAxis dataKey="day" />
                   <YAxis />
                   <Tooltip
-                    formatter={(value: number) => [`₹${value.toLocaleString('en-IN')}`, '']}
+                    formatter={(value: number) => [`NPR ${value.toLocaleString('en-IN')}`, '']}
                   />
                   <Legend />
                   <Bar dataKey="income" fill="#10b981" name="Income" />
@@ -235,7 +235,7 @@ export default function MonthlyReport({ transactions, canExportPdf }: MonthlyRep
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => [`₹${value.toLocaleString('en-IN')}`, 'Amount']}
+                    formatter={(value: number) => [`NPR ${value.toLocaleString('en-IN')}`, 'Amount']}
                   />
                 </PieChart>
               </ResponsiveContainer>
@@ -264,13 +264,13 @@ export default function MonthlyReport({ transactions, canExportPdf }: MonthlyRep
                 <tr key={cat.name} className="border-b border-slate-100">
                   <td className="py-3 font-medium text-slate-900">{cat.name}</td>
                   <td className="py-3 text-right text-green-600">
-                    {cat.income > 0 ? `₹${cat.income.toLocaleString('en-IN')}` : '-'}
+                    {cat.income > 0 ? `NPR ${cat.income.toLocaleString('en-IN')}` : '-'}
                   </td>
                   <td className="py-3 text-right text-red-600">
-                    {cat.expense > 0 ? `₹${cat.expense.toLocaleString('en-IN')}` : '-'}
+                    {cat.expense > 0 ? `NPR ${cat.expense.toLocaleString('en-IN')}` : '-'}
                   </td>
                   <td className={`py-3 text-right font-medium ${cat.total >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    ₹{cat.total.toLocaleString('en-IN')}
+                    NPR {cat.total.toLocaleString('en-IN')}
                   </td>
                 </tr>
               ))}
@@ -279,13 +279,13 @@ export default function MonthlyReport({ transactions, canExportPdf }: MonthlyRep
               <tr className="border-t-2 border-slate-200">
                 <td className="py-3 font-bold text-slate-900">Total</td>
                 <td className="py-3 text-right font-bold text-green-600">
-                  ₹{totalIncome.toLocaleString('en-IN')}
+                  NPR {totalIncome.toLocaleString('en-IN')}
                 </td>
                 <td className="py-3 text-right font-bold text-red-600">
-                  ₹{totalExpenses.toLocaleString('en-IN')}
+                  NPR {totalExpenses.toLocaleString('en-IN')}
                 </td>
                 <td className={`py-3 text-right font-bold ${balance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  ₹{balance.toLocaleString('en-IN')}
+                  NPR {balance.toLocaleString('en-IN')}
                 </td>
               </tr>
             </tfoot>

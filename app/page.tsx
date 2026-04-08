@@ -152,7 +152,7 @@ export default function HomePage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-5xl mx-auto">
             <PricingCard
               name="Free"
-              price="₹0"
+              price="NPR 0"
               description="Perfect for getting started"
               features={[
                 '1 Sheet connection',
@@ -166,7 +166,7 @@ export default function HomePage() {
             />
             <PricingCard
               name="Pro"
-              price="₹299"
+              price="NPR 299"
               description="For growing businesses"
               features={[
                 '3 Sheet connections',
@@ -181,7 +181,7 @@ export default function HomePage() {
             />
             <PricingCard
               name="Business"
-              price="₹999"
+              price="NPR 999"
               description="For teams and enterprises"
               features={[
                 '10 Sheet connections',

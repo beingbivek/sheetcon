@@ -115,13 +115,13 @@ export default function SalesList({ sales, onViewInvoice, onUpdatePayment, onDel
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right font-medium text-slate-900">
-                      ₹{sale.total.toLocaleString('en-IN')}
+                      NPR {sale.total.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 text-right text-green-600">
-                      ₹{sale.amountPaid.toLocaleString('en-IN')}
+                      NPR {sale.amountPaid.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 text-right text-orange-600 font-medium">
-                      ₹{sale.amountDue.toLocaleString('en-IN')}
+                      NPR {sale.amountDue.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className={`text-xs px-2 py-1 rounded-full ${
@@ -193,7 +193,7 @@ export default function SalesList({ sales, onViewInvoice, onUpdatePayment, onDel
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Amount Due: ₹{paymentModal.amountDue.toLocaleString('en-IN')}
+                  Amount Due: NPR {paymentModal.amountDue.toLocaleString('en-IN')}
                 </label>
                 <input
                   type="number"

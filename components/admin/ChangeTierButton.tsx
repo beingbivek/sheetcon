@@ -104,7 +104,7 @@ export default function ChangeTierButton({ user, currentTier }: ChangeTierButton
               >
                 {tiers.map((tier) => (
                   <option key={tier.id} value={tier.id}>
-                    {tier.name} (₹{tier.price}/month)
+                    {tier.name} (NPR {tier.price}/month)
                   </option>
                 ))}
               </select>

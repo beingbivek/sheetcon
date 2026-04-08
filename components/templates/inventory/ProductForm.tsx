@@ -120,7 +120,7 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Cost Price (₹)
+            Cost Price (NPR )
           </label>
           <input
             type="number"
@@ -135,7 +135,7 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Selling Price (₹) *
+            Selling Price (NPR ) *
           </label>
           <input
             type="number"

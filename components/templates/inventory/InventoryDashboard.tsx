@@ -66,7 +66,7 @@ export default function InventoryDashboard({
             </span>
           </div>
           <p className="text-3xl font-bold text-slate-900">
-            ₹{totalRevenue.toLocaleString('en-IN')}
+            NPR {totalRevenue.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-slate-600 mt-1">Total Sales</p>
         </div>
@@ -79,7 +79,7 @@ export default function InventoryDashboard({
             </span>
           </div>
           <p className="text-3xl font-bold text-slate-900">
-            ₹{totalStockValue.toLocaleString('en-IN')}
+            NPR {totalStockValue.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-slate-600 mt-1">Inventory Worth</p>
         </div>
@@ -141,7 +141,7 @@ export default function InventoryDashboard({
             <h3 className="font-semibold text-orange-900">Pending Payments</h3>
           </div>
           <p className="text-3xl font-bold text-orange-900">
-            ₹{totalDue.toLocaleString('en-IN')}
+            NPR {totalDue.toLocaleString('en-IN')}
           </p>
           <p className="text-sm text-orange-700 mt-1">
             From {sales.filter(s => s.paymentStatus !== 'PAID').length} invoices
@@ -206,7 +206,7 @@ export default function InventoryDashboard({
                       </td>
                       <td className="py-3 text-sm text-slate-600">{sale.customerName}</td>
                       <td className="py-3 text-sm text-right font-medium text-slate-900">
-                        ₹{sale.total.toLocaleString('en-IN')}
+                        NPR {sale.total.toLocaleString('en-IN')}
                       </td>
                       <td className="py-3 text-center">
                         <span className={`text-xs px-2 py-1 rounded ${

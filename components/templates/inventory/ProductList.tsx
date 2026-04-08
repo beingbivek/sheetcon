@@ -104,10 +104,10 @@ export default function ProductList({ products, onEdit, onDelete }: ProductListP
                       )}
                     </td>
                     <td className="px-6 py-4 text-right text-sm text-slate-600">
-                      ₹{product.costPrice.toLocaleString('en-IN')}
+                      NPR {product.costPrice.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium text-slate-900">
-                      ₹{product.sellingPrice.toLocaleString('en-IN')}
+                      NPR {product.sellingPrice.toLocaleString('en-IN')}
                     </td>
                     <td className="px-6 py-4 text-center">
                       <span className={`text-sm font-medium px-3 py-1 rounded-full ${
@@ -156,7 +156,7 @@ export default function ProductList({ products, onEdit, onDelete }: ProductListP
       <div className="flex justify-between items-center text-sm text-slate-600">
         <span>Showing {filteredProducts.length} of {products.length} products</span>
         <span>
-          Total Stock Value: ₹{filteredProducts.reduce((sum, p) => sum + (p.stock * p.costPrice), 0).toLocaleString('en-IN')}
+          Total Stock Value: NPR {filteredProducts.reduce((sum, p) => sum + (p.stock * p.costPrice), 0).toLocaleString('en-IN')}
         </span>
       </div>
     </div>

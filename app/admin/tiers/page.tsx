@@ -75,7 +75,7 @@ function TierCard({ tier, userCount }: { tier: any; userCount: number }) {
       {/* Price */}
       <div className="mb-6">
         <p className="text-3xl font-bold text-white">
-          ₹{tier.price}
+          NPR {tier.price}
           <span className="text-lg font-normal text-slate-400">/month</span>
         </p>
       </div>

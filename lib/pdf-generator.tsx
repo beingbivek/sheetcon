@@ -187,7 +187,7 @@ const styles = StyleSheet.create({
 // ═══════════════════════════════════════════════════
 
 const formatCurrency = (amount: number): string => {
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `NPR ${amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
 
 const formatDate = (dateStr: string): string => {

@@ -71,7 +71,7 @@ export default async function AdminDashboardPage() {
         />
         <StatCard
           title="Revenue (MRR)"
-          value={`₹${mrr.toLocaleString()}`}
+          value={`NPR ${mrr.toLocaleString()}`}
           subtitle="Monthly recurring"
           icon="💰"
           color="purple"
@@ -156,7 +156,7 @@ export default async function AdminDashboardPage() {
               >
                 <div>
                   <p className="text-white font-medium">{tier.name}</p>
-                  <p className="text-slate-400 text-sm">₹{tier.price}/month</p>
+                  <p className="text-slate-400 text-sm">NPR {tier.price}/month</p>
                 </div>
                 <div className="text-right">
                   <p className="text-white font-bold">{tier._count.users}</p>

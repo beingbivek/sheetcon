@@ -186,7 +186,7 @@ export default function TierForm({ tier }: TierFormProps) {
               onChange={handleChange}
               className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="INR">INR (₹)</option>
+              <option value="INR">INR (NPR )</option>
               <option value="USD">USD ($)</option>
               <option value="EUR">EUR (€)</option>
             </select>

@@ -111,13 +111,13 @@ export default function CustomerList({ customers, sales, onEdit, onDelete }: Cus
                   </div>
                   <div>
                     <p className="text-lg font-semibold text-green-600">
-                      ₹{stats.totalSpent.toLocaleString('en-IN')}
+                      NPR {stats.totalSpent.toLocaleString('en-IN')}
                     </p>
                     <p className="text-xs text-slate-500">Spent</p>
                   </div>
                   <div>
                     <p className="text-lg font-semibold text-orange-600">
-                      ₹{stats.totalDue.toLocaleString('en-IN')}
+                      NPR {stats.totalDue.toLocaleString('en-IN')}
                     </p>
                     <p className="text-xs text-slate-500">Due</p>
                   </div>

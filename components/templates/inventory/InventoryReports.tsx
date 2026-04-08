@@ -165,13 +165,13 @@ export default function InventoryReports({
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-sm text-slate-500">Total Revenue</p>
           <p className="text-2xl font-bold text-green-600">
-            ₹{(report.totalRevenue || 0).toLocaleString('en-IN')}
+            NPR {(report.totalRevenue || 0).toLocaleString('en-IN')}
           </p>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4">
           <p className="text-sm text-slate-500">Pending Dues</p>
           <p className="text-2xl font-bold text-orange-600">
-            ₹{(report.totalDue || 0).toLocaleString('en-IN')}
+            NPR {(report.totalDue || 0).toLocaleString('en-IN')}
           </p>
         </div>
       </div>
@@ -188,7 +188,7 @@ export default function InventoryReports({
                 <XAxis dataKey="month" />
                 <YAxis />
                 <Tooltip 
-                  formatter={(value: number) => [`₹${value.toLocaleString('en-IN')}`, 'Revenue']}
+                  formatter={(value: number) => [`NPR ${value.toLocaleString('en-IN')}`, 'Revenue']}
                 />
                 <Legend />
                 <Line 
@@ -231,7 +231,7 @@ export default function InventoryReports({
                   ))}
                 </Pie>
                 <Tooltip 
-                  formatter={(value: number) => [`₹${value.toLocaleString('en-IN')}`, 'Amount']}
+                  formatter={(value: number) => [`NPR ${value.toLocaleString('en-IN')}`, 'Amount']}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -252,7 +252,7 @@ export default function InventoryReports({
                   <XAxis type="number" />
                   <YAxis dataKey="productName" type="category" width={120} />
                   <Tooltip 
-                    formatter={(value: number) => [`₹${value.toLocaleString('en-IN')}`, 'Revenue']}
+                    formatter={(value: number) => [`NPR ${value.toLocaleString('en-IN')}`, 'Revenue']}
                   />
                   <Bar dataKey="revenue" fill="#3b82f6" />
                 </BarChart>
@@ -278,7 +278,7 @@ export default function InventoryReports({
                 </div>
                 <div className="text-right">
                   <p className="font-semibold text-slate-900">
-                    ₹{status.amount.toLocaleString('en-IN')}
+                    NPR {status.amount.toLocaleString('en-IN')}
                   </p>
                   <p className="text-sm text-slate-500">{status.count} invoices</p>
                 </div>
@@ -338,7 +338,7 @@ export default function InventoryReports({
             <p className="text-sm text-slate-500">Based on cost price × current stock</p>
           </div>
           <p className="text-3xl font-bold text-blue-600">
-            ₹{(report.stockValue || 0).toLocaleString('en-IN')}
+            NPR {(report.stockValue || 0).toLocaleString('en-IN')}
           </p>
         </div>
       </div>
