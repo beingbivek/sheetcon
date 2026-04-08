@@ -4,6 +4,14 @@ import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '@/lib/db';
 import { queueReadRequest, queueWriteRequest } from './google-sheets-queue';
+import {
+  getOrFetch,
+  getCacheKey,
+  CACHE_PREFIX,
+  CACHE_TTL,
+  invalidateCache,
+  invalidateSpreadsheetCache,
+} from './cache';
 
 // ═══════════════════════════════════════════════════
 // TYPES
@@ -76,15 +84,10 @@ export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
 }
 
 // ═══════════════════════════════════════════════════
-// RAW (INTERNAL) FUNCTIONS
-// No queue - used internally by other queued ops
-// to prevent DEADLOCK
+// RAW (INTERNAL) FUNCTIONS - NO QUEUE, NO CACHE
+// Used inside queued operations to prevent deadlock
 // ═══════════════════════════════════════════════════
 
-/**
- * RAW read transactions - bypasses queue
- * ONLY use from within other queued operations
- */
 async function _readTransactionsRaw(
   userId: string,
   spreadsheetId: string,
@@ -110,7 +113,6 @@ async function _readTransactionsRaw(
       amount: parseFloat(row[5]) || 0,
     })).filter(t => t.id);
   } catch {
-    // Fallback: try Sheet1 if named sheet not found
     try {
       const fallbackRes = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -133,10 +135,6 @@ async function _readTransactionsRaw(
   }
 }
 
-/**
- * RAW get metadata - bypasses queue
- * ONLY use from within other queued operations
- */
 async function _getSpreadsheetMetadataRaw(
   userId: string,
   spreadsheetId: string
@@ -160,49 +158,85 @@ async function _getSpreadsheetMetadataRaw(
 }
 
 // ═══════════════════════════════════════════════════
-// QUEUED PUBLIC FUNCTIONS
+// QUEUED + CACHED PUBLIC FUNCTIONS
 // ═══════════════════════════════════════════════════
 
-// ─── DRIVE (READ) ─────────────────────────────────
+// ─── DRIVE: LIST SPREADSHEETS (READ + CACHED) ─────
 
 export async function listUserSpreadsheets(userId: string): Promise<GoogleSheetFile[]> {
-  return queueReadRequest(userId, async () => {
-    const auth = await getOAuth2Client(userId);
-    const drive = google.drive({ version: 'v3', auth });
+  const cacheKey = getCacheKey(CACHE_PREFIX.SPREADSHEETS, userId);
 
-    const response = await drive.files.list({
-      q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-      fields: 'files(id, name, webViewLink)',
-      orderBy: 'modifiedTime desc',
-      pageSize: 50,
-    });
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        const auth = await getOAuth2Client(userId);
+        const drive = google.drive({ version: 'v3', auth });
 
-    return (response.data.files || []).map((file) => ({
-      id: file.id!,
-      name: file.name!,
-      webViewLink: file.webViewLink || undefined,
-    }));
-  });
+        const response = await drive.files.list({
+          q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+          fields: 'files(id, name, webViewLink)',
+          orderBy: 'modifiedTime desc',
+          pageSize: 50,
+        });
+
+        return (response.data.files || []).map((file) => ({
+          id: file.id!,
+          name: file.name!,
+          webViewLink: file.webViewLink || undefined,
+        }));
+      });
+    },
+    CACHE_TTL.SPREADSHEETS
+  );
 }
 
-// ─── METADATA (READ) ──────────────────────────────
+// ─── METADATA (READ + CACHED) ─────────────────────
 
 export async function getSpreadsheetMetadata(
   userId: string,
   spreadsheetId: string
 ): Promise<SheetMetadata> {
-  return queueReadRequest(userId, async () => {
-    return _getSpreadsheetMetadataRaw(userId, spreadsheetId);
-  });
+  const cacheKey = getCacheKey(CACHE_PREFIX.METADATA, spreadsheetId);
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        return _getSpreadsheetMetadataRaw(userId, spreadsheetId);
+      });
+    },
+    CACHE_TTL.METADATA
+  );
 }
 
-// ─── CREATE FINANCE SPREADSHEET (WRITE - HIGH) ────
+// ─── READ TRANSACTIONS (READ + CACHED) ────────────
+
+export async function readTransactions(
+  userId: string,
+  spreadsheetId: string,
+  sheetName: string = 'Transactions'
+): Promise<Transaction[]> {
+  const cacheKey = getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName);
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        return _readTransactionsRaw(userId, spreadsheetId, sheetName);
+      });
+    },
+    CACHE_TTL.TRANSACTIONS
+  );
+}
+
+// ─── CREATE FINANCE SPREADSHEET (WRITE) ───────────
 
 export async function createFinanceSpreadsheet(
   userId: string,
   title: string
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -268,6 +302,11 @@ export async function createFinanceSpreadsheet(
       spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${spreadsheetId}`,
     };
   }, 'HIGH');
+
+  // Invalidate user's spreadsheet list cache
+  await invalidateCache(getCacheKey(CACHE_PREFIX.SPREADSHEETS, userId));
+
+  return result;
 }
 
 // ─── INITIALIZE EXISTING SHEET (WRITE) ────────────
@@ -299,19 +338,7 @@ export async function initializeExistingSheet(
   });
 }
 
-// ─── READ TRANSACTIONS (READ) ─────────────────────
-
-export async function readTransactions(
-  userId: string,
-  spreadsheetId: string,
-  sheetName: string = 'Transactions'
-): Promise<Transaction[]> {
-  return queueReadRequest(userId, async () => {
-    return _readTransactionsRaw(userId, spreadsheetId, sheetName);
-  });
-}
-
-// ─── APPEND TRANSACTION (WRITE - HIGH) ────────────
+// ─── APPEND TRANSACTION (WRITE + CACHE INVALIDATE) ─
 
 export async function appendTransaction(
   userId: string,
@@ -319,13 +346,12 @@ export async function appendTransaction(
   transaction: Omit<Transaction, 'id'>,
   sheetName: string = 'Transactions'
 ): Promise<Transaction> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
     const id = `TXN-${Date.now()}`;
 
-    // FIX: Explicit field order instead of Object.values()
     const row = [
       id,
       transaction.date,
@@ -345,9 +371,15 @@ export async function appendTransaction(
 
     return { id, ...transaction };
   }, 'HIGH');
+
+  // Invalidate transactions cache
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
+
+  return result;
 }
 
-// ─── UPDATE TRANSACTION (WRITE - HIGH) ────────────
+// ─── UPDATE TRANSACTION (WRITE + CACHE INVALIDATE) ─
 
 export async function updateTransaction(
   userId: string,
@@ -356,8 +388,7 @@ export async function updateTransaction(
   updates: Partial<Transaction>,
   sheetName: string = 'Transactions'
 ): Promise<Transaction | null> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
     const transactions = await _readTransactionsRaw(userId, spreadsheetId, sheetName);
     const index = transactions.findIndex(t => t.id === transactionId);
 
@@ -387,9 +418,15 @@ export async function updateTransaction(
 
     return updated;
   }, 'HIGH');
+
+  // Invalidate transactions cache
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
+
+  return result;
 }
 
-// ─── DELETE TRANSACTION (WRITE) ───────────────────
+// ─── DELETE TRANSACTION (WRITE + CACHE INVALIDATE) ─
 
 export async function deleteTransaction(
   userId: string,
@@ -397,15 +434,13 @@ export async function deleteTransaction(
   transactionId: string,
   sheetName: string = 'Transactions'
 ): Promise<boolean> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW functions to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
     const transactions = await _readTransactionsRaw(userId, spreadsheetId, sheetName);
     const index = transactions.findIndex(t => t.id === transactionId);
 
     if (index === -1) return false;
 
     const metadata = await _getSpreadsheetMetadataRaw(userId, spreadsheetId);
-    // FIX: Include Sheet1 fallback
     const sheet = metadata.sheets.find(
       s => s.title === sheetName || s.title === 'Sheet1'
     );
@@ -433,6 +468,12 @@ export async function deleteTransaction(
 
     return true;
   });
+
+  // Invalidate transactions cache
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
+  await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════
@@ -448,5 +489,5 @@ export function extractSpreadsheetId(urlOrId: string): string {
   return match[1];
 }
 
-// re-export inventory functions
+// Re-export inventory functions
 export * from './google-sheet-inventory';

@@ -3,6 +3,14 @@
 import { google } from 'googleapis';
 import { getOAuth2Client } from './google-sheet';
 import { queueReadRequest, queueWriteRequest } from './google-sheets-queue';
+import {
+  getOrFetch,
+  getCacheKey,
+  CACHE_PREFIX,
+  CACHE_TTL,
+  invalidateCache,
+  invalidateSpreadsheetCache,
+} from './cache';
 
 // ═══════════════════════════════════════════════════
 // TYPES
@@ -84,13 +92,13 @@ export interface InventoryReport {
 }
 
 // ═══════════════════════════════════════════════════
-// RAW (INTERNAL) FUNCTIONS - NO QUEUE
+// RAW (INTERNAL) FUNCTIONS - NO QUEUE, NO CACHE
 // Used by queued operations to prevent DEADLOCK
 // These are NOT exported - internal use only
 // ═══════════════════════════════════════════════════
 
 /**
- * RAW read products - bypasses queue
+ * RAW read products - bypasses queue and cache
  * ONLY use from within other queued operations
  */
 async function _readProductsRaw(userId: string, spreadsheetId: string): Promise<Product[]> {
@@ -121,7 +129,7 @@ async function _readProductsRaw(userId: string, spreadsheetId: string): Promise<
 }
 
 /**
- * RAW read customers - bypasses queue
+ * RAW read customers - bypasses queue and cache
  */
 async function _readCustomersRaw(userId: string, spreadsheetId: string): Promise<Customer[]> {
   const auth = await getOAuth2Client(userId);
@@ -147,7 +155,7 @@ async function _readCustomersRaw(userId: string, spreadsheetId: string): Promise
 }
 
 /**
- * RAW read sales with items - bypasses queue
+ * RAW read sales with items - bypasses queue and cache
  */
 async function _readSalesRaw(userId: string, spreadsheetId: string): Promise<Sale[]> {
   const auth = await getOAuth2Client(userId);
@@ -216,7 +224,7 @@ async function _readSalesRaw(userId: string, spreadsheetId: string): Promise<Sal
 }
 
 /**
- * RAW get sheet ID by title - bypasses queue
+ * RAW get sheet ID by title - bypasses queue and cache
  */
 async function _getSheetIdRaw(
   userId: string,
@@ -241,7 +249,7 @@ async function _getSheetIdRaw(
 }
 
 /**
- * RAW update product - bypasses queue
+ * RAW update product - bypasses queue and cache
  * Used internally when already inside a queued operation
  */
 async function _updateProductRaw(
@@ -287,7 +295,43 @@ async function _updateProductRaw(
 }
 
 // ═══════════════════════════════════════════════════
+// CACHE INVALIDATION HELPERS
+// ═══════════════════════════════════════════════════
+
+/**
+ * Invalidate product-related caches
+ */
+async function invalidateProductCaches(spreadsheetId: string): Promise<void> {
+  await Promise.all([
+    invalidateCache(getCacheKey(CACHE_PREFIX.PRODUCTS, spreadsheetId)),
+    invalidateCache(getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId)),
+  ]);
+}
+
+/**
+ * Invalidate customer-related caches
+ */
+async function invalidateCustomerCaches(spreadsheetId: string): Promise<void> {
+  await Promise.all([
+    invalidateCache(getCacheKey(CACHE_PREFIX.CUSTOMERS, spreadsheetId)),
+    invalidateCache(getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId)),
+  ]);
+}
+
+/**
+ * Invalidate sales-related caches (includes products due to stock changes)
+ */
+async function invalidateSalesCaches(spreadsheetId: string): Promise<void> {
+  await Promise.all([
+    invalidateCache(getCacheKey(CACHE_PREFIX.SALES, spreadsheetId)),
+    invalidateCache(getCacheKey(CACHE_PREFIX.PRODUCTS, spreadsheetId)),
+    invalidateCache(getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId)),
+  ]);
+}
+
+// ═══════════════════════════════════════════════════
 // CREATE INVENTORY SPREADSHEET (WRITE - HIGH)
+// No caching needed - one-time operation
 // ═══════════════════════════════════════════════════
 
 export async function createInventorySpreadsheet(
@@ -382,21 +426,35 @@ export async function createInventorySpreadsheet(
 }
 
 // ═══════════════════════════════════════════════════
-// PRODUCT FUNCTIONS
+// PRODUCT FUNCTIONS (WITH CACHING)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Read all products (CACHED)
+ */
 export async function readProducts(userId: string, spreadsheetId: string): Promise<Product[]> {
-  return queueReadRequest(userId, async () => {
-    return _readProductsRaw(userId, spreadsheetId);
-  });
+  const cacheKey = getCacheKey(CACHE_PREFIX.PRODUCTS, spreadsheetId);
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        return _readProductsRaw(userId, spreadsheetId);
+      });
+    },
+    CACHE_TTL.PRODUCTS
+  );
 }
 
+/**
+ * Append a new product (WRITE + INVALIDATE CACHE)
+ */
 export async function appendProduct(
   userId: string,
   spreadsheetId: string,
   product: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Product> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -429,28 +487,44 @@ export async function appendProduct(
 
     return { id, ...product, createdAt: now, updatedAt: now };
   }, 'HIGH');
+
+  // Invalidate cache after successful write
+  await invalidateProductCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Update a product (WRITE + INVALIDATE CACHE)
+ */
 export async function updateProduct(
   userId: string,
   spreadsheetId: string,
   productId: string,
   updates: Partial<Product>
 ): Promise<Product | null> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
+    // Use RAW function to prevent DEADLOCK
     const products = await _readProductsRaw(userId, spreadsheetId);
     return _updateProductRaw(userId, spreadsheetId, products, productId, updates);
   }, 'HIGH');
+
+  // Invalidate cache after successful write
+  await invalidateProductCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Delete a product (WRITE + INVALIDATE CACHE)
+ */
 export async function deleteProduct(
   userId: string,
   spreadsheetId: string,
   productId: string
 ): Promise<boolean> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
+    // Use RAW function to prevent DEADLOCK
     const products = await _readProductsRaw(userId, spreadsheetId);
     const index = products.findIndex(p => p.id === productId);
 
@@ -458,10 +532,9 @@ export async function deleteProduct(
 
     const rowNumber = index + 2;
 
-    // FIX: Use RAW function to get sheet ID
+    // Use RAW function to get sheet ID
     const sheetId = await _getSheetIdRaw(userId, spreadsheetId, 'Products');
     
-    // FIX: Correct condition check
     if (sheetId === null) return false;
 
     const auth = await getOAuth2Client(userId);
@@ -485,44 +558,70 @@ export async function deleteProduct(
 
     return true;
   });
+
+  // Invalidate cache after successful write
+  await invalidateProductCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Update product stock (WRITE + INVALIDATE CACHE)
+ */
 export async function updateProductStock(
   userId: string,
   spreadsheetId: string,
   productId: string,
   quantityChange: number
 ): Promise<boolean> {
-  // FIX: Wrap in queue and use RAW reads internally
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const products = await _readProductsRaw(userId, spreadsheetId);
     const product = products.find(p => p.id === productId);
 
     if (!product) return false;
 
     const newStock = Math.max(0, product.stock + quantityChange);
-    const result = await _updateProductRaw(userId, spreadsheetId, products, productId, { stock: newStock });
+    const updateResult = await _updateProductRaw(userId, spreadsheetId, products, productId, { stock: newStock });
     
-    return result !== null;
+    return updateResult !== null;
   }, 'HIGH');
+
+  // Invalidate cache after successful write
+  await invalidateProductCaches(spreadsheetId);
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════
-// CUSTOMER FUNCTIONS
+// CUSTOMER FUNCTIONS (WITH CACHING)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Read all customers (CACHED)
+ */
 export async function readCustomers(userId: string, spreadsheetId: string): Promise<Customer[]> {
-  return queueReadRequest(userId, async () => {
-    return _readCustomersRaw(userId, spreadsheetId);
-  });
+  const cacheKey = getCacheKey(CACHE_PREFIX.CUSTOMERS, spreadsheetId);
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        return _readCustomersRaw(userId, spreadsheetId);
+      });
+    },
+    CACHE_TTL.CUSTOMERS
+  );
 }
 
+/**
+ * Append a new customer (WRITE + INVALIDATE CACHE)
+ */
 export async function appendCustomer(
   userId: string,
   spreadsheetId: string,
   customer: Omit<Customer, 'id' | 'createdAt'>
 ): Promise<Customer> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -550,16 +649,24 @@ export async function appendCustomer(
 
     return { id, ...customer, createdAt: now };
   }, 'HIGH');
+
+  // Invalidate cache after successful write
+  await invalidateCustomerCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Update a customer (WRITE + INVALIDATE CACHE)
+ */
 export async function updateCustomer(
   userId: string,
   spreadsheetId: string,
   customerId: string,
   updates: Partial<Customer>
 ): Promise<Customer | null> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
+    // Use RAW function to prevent DEADLOCK
     const customers = await _readCustomersRaw(userId, spreadsheetId);
     const index = customers.findIndex(c => c.id === customerId);
 
@@ -591,15 +698,23 @@ export async function updateCustomer(
 
     return updated;
   }, 'HIGH');
+
+  // Invalidate cache after successful write
+  await invalidateCustomerCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Delete a customer (WRITE + INVALIDATE CACHE)
+ */
 export async function deleteCustomer(
   userId: string,
   spreadsheetId: string,
   customerId: string
 ): Promise<boolean> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
+    // Use RAW function to prevent DEADLOCK
     const customers = await _readCustomersRaw(userId, spreadsheetId);
     const index = customers.findIndex(c => c.id === customerId);
 
@@ -607,10 +722,9 @@ export async function deleteCustomer(
 
     const rowNumber = index + 2;
 
-    // FIX: Use RAW function to get sheet ID
+    // Use RAW function to get sheet ID
     const sheetId = await _getSheetIdRaw(userId, spreadsheetId, 'Customers');
     
-    // FIX: Correct condition check
     if (sheetId === null) return false;
 
     const auth = await getOAuth2Client(userId);
@@ -634,34 +748,56 @@ export async function deleteCustomer(
 
     return true;
   });
+
+  // Invalidate cache after successful write
+  await invalidateCustomerCaches(spreadsheetId);
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════
-// SALES / INVOICE FUNCTIONS
+// SALES / INVOICE FUNCTIONS (WITH CACHING)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Read all sales (CACHED)
+ */
 export async function readSales(userId: string, spreadsheetId: string): Promise<Sale[]> {
-  return queueReadRequest(userId, async () => {
-    return _readSalesRaw(userId, spreadsheetId);
-  });
+  const cacheKey = getCacheKey(CACHE_PREFIX.SALES, spreadsheetId);
+
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        return _readSalesRaw(userId, spreadsheetId);
+      });
+    },
+    CACHE_TTL.SALES
+  );
 }
 
+/**
+ * Read a single sale by ID (uses cached sales data)
+ */
 export async function readSaleById(
   userId: string,
   spreadsheetId: string,
   saleId: string
 ): Promise<Sale | null> {
-  // FIX: Use RAW function - this might be called from within queued operations
-  const sales = await _readSalesRaw(userId, spreadsheetId);
+  // Use cached readSales to avoid additional API calls
+  const sales = await readSales(userId, spreadsheetId);
   return sales.find(s => s.id === saleId) || null;
 }
 
+/**
+ * Create a new sale (WRITE + INVALIDATE CACHE)
+ */
 export async function createSale(
   userId: string,
   spreadsheetId: string,
   sale: Omit<Sale, 'id' | 'invoiceNumber' | 'createdAt'>
 ): Promise<Sale> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
@@ -724,7 +860,7 @@ export async function createSale(
         requestBody: { values: itemRows },
       });
 
-      // FIX: Update product stock using RAW operations (no nested queue)
+      // Update product stock using RAW operations (no nested queue)
       const products = await _readProductsRaw(userId, spreadsheetId);
       
       for (const item of sale.items) {
@@ -740,8 +876,16 @@ export async function createSale(
 
     return { id, invoiceNumber, ...sale, createdAt: now };
   }, 'HIGH');
+
+  // Invalidate cache after successful write (includes products due to stock changes)
+  await invalidateSalesCaches(spreadsheetId);
+
+  return result;
 }
 
+/**
+ * Update sale payment (WRITE + INVALIDATE CACHE)
+ */
 export async function updateSalePayment(
   userId: string,
   spreadsheetId: string,
@@ -749,8 +893,8 @@ export async function updateSalePayment(
   amountPaid: number,
   paymentMethod: Sale['paymentMethod']
 ): Promise<Sale | null> {
-  return queueWriteRequest(userId, async () => {
-    // FIX: Use RAW function to prevent DEADLOCK
+  const result = await queueWriteRequest(userId, async () => {
+    // Use RAW function to prevent DEADLOCK
     const sales = await _readSalesRaw(userId, spreadsheetId);
     const index = sales.findIndex(s => s.id === saleId);
 
@@ -805,18 +949,29 @@ export async function updateSalePayment(
 
     return updated;
   }, 'HIGH');
+
+  // Invalidate sales and report caches (no stock changes in payment update)
+  await Promise.all([
+    invalidateCache(getCacheKey(CACHE_PREFIX.SALES, spreadsheetId)),
+    invalidateCache(getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId)),
+  ]);
+
+  return result;
 }
 
+/**
+ * Delete a sale (WRITE + INVALIDATE CACHE)
+ */
 export async function deleteSale(
   userId: string,
   spreadsheetId: string,
   saleId: string
 ): Promise<boolean> {
-  return queueWriteRequest(userId, async () => {
+  const result = await queueWriteRequest(userId, async () => {
     const auth = await getOAuth2Client(userId);
     const sheets = google.sheets({ version: 'v4', auth });
 
-    // FIX: Use RAW functions to prevent DEADLOCK
+    // Use RAW functions to prevent DEADLOCK
     const sales = await _readSalesRaw(userId, spreadsheetId);
     const saleIndex = sales.findIndex(s => s.id === saleId);
     
@@ -824,10 +979,9 @@ export async function deleteSale(
     
     const sale = sales[saleIndex];
 
-    // FIX: Use RAW function to get sheet ID
+    // Use RAW function to get sheet ID
     const salesSheetId = await _getSheetIdRaw(userId, spreadsheetId, 'Sales');
     
-    // FIX: Correct condition check
     if (salesSheetId === null) return false;
 
     // Delete sale row
@@ -903,108 +1057,164 @@ export async function deleteSale(
 
     return true;
   });
+
+  // Invalidate cache after successful write (includes products due to stock restoration)
+  await invalidateSalesCaches(spreadsheetId);
+
+  return result;
 }
 
 // ═══════════════════════════════════════════════════
-// REPORTS / ANALYTICS (READ)
+// REPORTS / ANALYTICS (CACHED)
 // ═══════════════════════════════════════════════════
 
+/**
+ * Get inventory report (CACHED)
+ */
 export async function getInventoryReport(
   userId: string,
   spreadsheetId: string
 ): Promise<InventoryReport> {
-  return queueReadRequest(userId, async () => {
-    // FIX: Use RAW functions to prevent DEADLOCK
-    const [products, customers, sales] = await Promise.all([
-      _readProductsRaw(userId, spreadsheetId),
-      _readCustomersRaw(userId, spreadsheetId),
-      _readSalesRaw(userId, spreadsheetId),
-    ]);
+  const cacheKey = getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId);
 
-    // Product stats
-    const lowStockProducts = products.filter(p => p.stock > 0 && p.stock <= p.minStock);
-    const outOfStockProducts = products.filter(p => p.stock <= 0);
-    const stockValue = products.reduce((sum, p) => sum + (p.stock * p.costPrice), 0);
+  return getOrFetch(
+    cacheKey,
+    async () => {
+      return queueReadRequest(userId, async () => {
+        // Use RAW functions to prevent DEADLOCK
+        const [products, customers, sales] = await Promise.all([
+          _readProductsRaw(userId, spreadsheetId),
+          _readCustomersRaw(userId, spreadsheetId),
+          _readSalesRaw(userId, spreadsheetId),
+        ]);
 
-    // Sales stats
-    const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
-    const totalPaid = sales.reduce((sum, s) => sum + s.amountPaid, 0);
-    const totalDue = sales.reduce((sum, s) => sum + s.amountDue, 0);
+        // Product stats
+        const lowStockProducts = products.filter(p => p.stock > 0 && p.stock <= p.minStock);
+        const outOfStockProducts = products.filter(p => p.stock <= 0);
+        const stockValue = products.reduce((sum, p) => sum + (p.stock * p.costPrice), 0);
 
-    // Sales by payment method
-    const salesByPaymentMethod: Record<string, { count: number; amount: number }> = {};
-    sales.forEach(s => {
-      if (!salesByPaymentMethod[s.paymentMethod]) {
-        salesByPaymentMethod[s.paymentMethod] = { count: 0, amount: 0 };
-      }
-      salesByPaymentMethod[s.paymentMethod].count++;
-      salesByPaymentMethod[s.paymentMethod].amount += s.total;
-    });
+        // Sales stats
+        const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
+        const totalPaid = sales.reduce((sum, s) => sum + s.amountPaid, 0);
+        const totalDue = sales.reduce((sum, s) => sum + s.amountDue, 0);
 
-    // Sales by status
-    const salesByStatus: Record<string, { count: number; amount: number }> = {};
-    sales.forEach(s => {
-      if (!salesByStatus[s.paymentStatus]) {
-        salesByStatus[s.paymentStatus] = { count: 0, amount: 0 };
-      }
-      salesByStatus[s.paymentStatus].count++;
-      salesByStatus[s.paymentStatus].amount += s.total;
-    });
+        // Sales by payment method
+        const salesByPaymentMethod: Record<string, { count: number; amount: number }> = {};
+        sales.forEach(s => {
+          if (!salesByPaymentMethod[s.paymentMethod]) {
+            salesByPaymentMethod[s.paymentMethod] = { count: 0, amount: 0 };
+          }
+          salesByPaymentMethod[s.paymentMethod].count++;
+          salesByPaymentMethod[s.paymentMethod].amount += s.total;
+        });
 
-    // Top products
-    const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-    sales.forEach(s => {
-      s.items.forEach(item => {
-        if (!productSales[item.productId]) {
-          productSales[item.productId] = { name: item.productName, quantity: 0, revenue: 0 };
-        }
-        productSales[item.productId].quantity += item.quantity;
-        productSales[item.productId].revenue += item.total;
+        // Sales by status
+        const salesByStatus: Record<string, { count: number; amount: number }> = {};
+        sales.forEach(s => {
+          if (!salesByStatus[s.paymentStatus]) {
+            salesByStatus[s.paymentStatus] = { count: 0, amount: 0 };
+          }
+          salesByStatus[s.paymentStatus].count++;
+          salesByStatus[s.paymentStatus].amount += s.total;
+        });
+
+        // Top products
+        const productSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
+        sales.forEach(s => {
+          s.items.forEach(item => {
+            if (!productSales[item.productId]) {
+              productSales[item.productId] = { name: item.productName, quantity: 0, revenue: 0 };
+            }
+            productSales[item.productId].quantity += item.quantity;
+            productSales[item.productId].revenue += item.total;
+          });
+        });
+
+        const topProducts = Object.values(productSales)
+          .map(p => ({ productName: p.name, quantity: p.quantity, revenue: p.revenue }))
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 10);
+
+        // Recent sales
+        const recentSales = [...sales]
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+          .slice(0, 10);
+
+        // Monthly sales
+        const monthlyMap: Record<string, { count: number; revenue: number }> = {};
+        sales.forEach(s => {
+          const month = s.date.substring(0, 7); // YYYY-MM
+          if (!monthlyMap[month]) {
+            monthlyMap[month] = { count: 0, revenue: 0 };
+          }
+          monthlyMap[month].count++;
+          monthlyMap[month].revenue += s.total;
+        });
+
+        const monthlySales = Object.entries(monthlyMap)
+          .map(([month, data]) => ({ month, ...data }))
+          .sort((a, b) => a.month.localeCompare(b.month))
+          .slice(-12);
+
+        return {
+          totalProducts: products.length,
+          totalStock: products.reduce((sum, p) => sum + p.stock, 0),
+          lowStockProducts,
+          outOfStockProducts,
+          stockValue,
+          totalCustomers: customers.length,
+          totalSales: sales.length,
+          totalRevenue,
+          totalPaid,
+          totalDue,
+          salesByPaymentMethod,
+          salesByStatus,
+          topProducts,
+          recentSales,
+          monthlySales,
+        };
       });
-    });
+    },
+    CACHE_TTL.REPORT
+  );
+}
 
-    const topProducts = Object.values(productSales)
-      .map(p => ({ productName: p.name, quantity: p.quantity, revenue: p.revenue }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10);
+// ═══════════════════════════════════════════════════
+// UTILITY FUNCTIONS
+// ═══════════════════════════════════════════════════
 
-    // Recent sales
-    const recentSales = [...sales]
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, 10);
+/**
+ * Force refresh all caches for a spreadsheet
+ * Useful when data might have been modified outside the app
+ */
+export async function refreshAllCaches(spreadsheetId: string): Promise<void> {
+  await invalidateSpreadsheetCache(spreadsheetId);
+}
 
-    // Monthly sales
-    const monthlyMap: Record<string, { count: number; revenue: number }> = {};
-    sales.forEach(s => {
-      const month = s.date.substring(0, 7); // YYYY-MM
-      if (!monthlyMap[month]) {
-        monthlyMap[month] = { count: 0, revenue: 0 };
-      }
-      monthlyMap[month].count++;
-      monthlyMap[month].revenue += s.total;
-    });
+/**
+ * Force refresh products cache
+ */
+export async function refreshProductsCache(spreadsheetId: string): Promise<void> {
+  await invalidateCache(getCacheKey(CACHE_PREFIX.PRODUCTS, spreadsheetId));
+}
 
-    const monthlySales = Object.entries(monthlyMap)
-      .map(([month, data]) => ({ month, ...data }))
-      .sort((a, b) => a.month.localeCompare(b.month))
-      .slice(-12);
+/**
+ * Force refresh customers cache
+ */
+export async function refreshCustomersCache(spreadsheetId: string): Promise<void> {
+  await invalidateCache(getCacheKey(CACHE_PREFIX.CUSTOMERS, spreadsheetId));
+}
 
-    return {
-      totalProducts: products.length,
-      totalStock: products.reduce((sum, p) => sum + p.stock, 0),
-      lowStockProducts,
-      outOfStockProducts,
-      stockValue,
-      totalCustomers: customers.length,
-      totalSales: sales.length,
-      totalRevenue,
-      totalPaid,
-      totalDue,
-      salesByPaymentMethod,
-      salesByStatus,
-      topProducts,
-      recentSales,
-      monthlySales,
-    };
-  });
+/**
+ * Force refresh sales cache
+ */
+export async function refreshSalesCache(spreadsheetId: string): Promise<void> {
+  await invalidateCache(getCacheKey(CACHE_PREFIX.SALES, spreadsheetId));
+}
+
+/**
+ * Force refresh report cache
+ */
+export async function refreshReportCache(spreadsheetId: string): Promise<void> {
+  await invalidateCache(getCacheKey(CACHE_PREFIX.REPORT, spreadsheetId));
 }
