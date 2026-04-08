@@ -28,6 +28,9 @@ export default function FinanceApp({ connection, user }: FinanceAppProps) {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
+  const [addLoading, setAddLoading] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
   useEffect(() => {
     fetchTransactions();
@@ -50,23 +53,30 @@ export default function FinanceApp({ connection, user }: FinanceAppProps) {
   };
 
   const handleAddTransaction = async (transaction: any) => {
-    try {
-      const response = await fetch(`/api/user/sheets/${connection.id}/data`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(transaction),
-      });
+  if (addLoading) return; // Prevent double-submit
+  
+  setAddLoading(true);
+  try {
+    const response = await fetch(`/api/user/sheets/${connection.id}/data`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(transaction),
+    });
 
-      if (response.ok) {
-        await fetchTransactions();
-        setShowAddForm(false);
-      }
-    } catch (error) {
-      console.error('Error adding transaction:', error);
+    if (response.ok) {
+      await fetchTransactions();
+      setShowAddForm(false);
     }
-  };
+  } catch (error) {
+    console.error('Error adding transaction:', error);
+  } finally {
+    setAddLoading(false);
+  }
+};
 
   const handleUpdateTransaction = async (id: string, transaction: any) => {
+    if (editLoading) return; // Prevent double-submit
+    setEditLoading(true);
     try {
       const response = await fetch(`/api/user/sheets/${connection.id}/data/${id}`, {
         method: 'PUT',
@@ -79,24 +89,30 @@ export default function FinanceApp({ connection, user }: FinanceAppProps) {
       }
     } catch (error) {
       console.error('Error updating transaction:', error);
+    } finally {
+      setEditLoading(false);
     }
   };
 
   const handleDeleteTransaction = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this transaction?')) return;
+  if (deleteLoading) return; // Prevent double-submit
+  if (!confirm('Are you sure you want to delete this transaction?')) return;
 
-    try {
-      const response = await fetch(`/api/user/sheets/${connection.id}/data/${id}`, {
-        method: 'DELETE',
-      });
+  setDeleteLoading(id);
+  try {
+    const response = await fetch(`/api/user/sheets/${connection.id}/data/${id}`, {
+      method: 'DELETE',
+    });
 
-      if (response.ok) {
-        await fetchTransactions();
-      }
-    } catch (error) {
-      console.error('Error deleting transaction:', error);
+    if (response.ok) {
+      await fetchTransactions();
     }
-  };
+  } catch (error) {
+    console.error('Error deleting transaction:', error);
+  } finally {
+    setDeleteLoading(null);
+  }
+};
 
   return (
     <div className="max-w-7xl mx-auto">
@@ -119,31 +135,28 @@ export default function FinanceApp({ connection, user }: FinanceAppProps) {
         <nav className="flex gap-8">
           <button
             onClick={() => setCurrentView('dashboard')}
-            className={`pb-4 border-b-2 transition-colors ${
-              currentView === 'dashboard'
+            className={`pb-4 border-b-2 transition-colors ${currentView === 'dashboard'
                 ? 'border-blue-600 text-blue-600 font-medium'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             Dashboard
           </button>
           <button
             onClick={() => setCurrentView('transactions')}
-            className={`pb-4 border-b-2 transition-colors ${
-              currentView === 'transactions'
+            className={`pb-4 border-b-2 transition-colors ${currentView === 'transactions'
                 ? 'border-blue-600 text-blue-600 font-medium'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             Transactions
           </button>
           <button
             onClick={() => setCurrentView('reports')}
-            className={`pb-4 border-b-2 transition-colors ${
-              currentView === 'reports'
+            className={`pb-4 border-b-2 transition-colors ${currentView === 'reports'
                 ? 'border-blue-600 text-blue-600 font-medium'
                 : 'border-transparent text-slate-600 hover:text-slate-900'
-            }`}
+              }`}
           >
             Reports
           </button>

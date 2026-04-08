@@ -1,51 +1,53 @@
 // lib/auth.ts
 
-import { NextAuthOptions } from 'next-auth';
-import CredentialsProvider from 'next-auth/providers/credentials';
-import GoogleProvider from 'next-auth/providers/google';
-import { prisma } from '@/lib/db';
-import bcrypt from 'bcryptjs';
+import { NextAuthOptions } from "next-auth";
+import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
+import { prisma } from "@/lib/db";
+import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
   providers: [
     // Google OAuth for Users
+    // lib/auth.ts - Find the GoogleProvider and update scopes
+
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
       authorization: {
         params: {
           scope: [
-            'openid',
-            'email',
-            'profile',
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive.readonly',
-          ].join(' '),
-          access_type: 'offline',
-          prompt: 'consent',
+            "openid",
+            "email",
+            "profile",
+            "https://www.googleapis.com/auth/spreadsheets", // Read/write sheets
+            "https://www.googleapis.com/auth/drive.file", // CHANGED from drive.readonly
+          ].join(" "),
+          access_type: "offline",
+          prompt: "consent",
         },
       },
     }),
 
     // Admin Login (Credentials)
     CredentialsProvider({
-      id: 'admin-login',
-      name: 'Admin Login',
+      id: "admin-login",
+      name: "Admin Login",
       credentials: {
         email: {
-          label: 'Email',
-          type: 'email',
-          placeholder: 'admin@sheetcon.local',
+          label: "Email",
+          type: "email",
+          placeholder: "admin@sheetcon.local",
         },
         password: {
-          label: 'Password',
-          type: 'password',
-          placeholder: '••••••••',
+          label: "Password",
+          type: "password",
+          placeholder: "••••••••",
         },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          throw new Error('Please enter email and password');
+          throw new Error("Please enter email and password");
         }
 
         const admin = await prisma.admin.findUnique({
@@ -53,20 +55,20 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!admin) {
-          throw new Error('Invalid email or password');
+          throw new Error("Invalid email or password");
         }
 
         if (!admin.isActive) {
-          throw new Error('Your account has been deactivated');
+          throw new Error("Your account has been deactivated");
         }
 
         const isPasswordValid = await bcrypt.compare(
           credentials.password,
-          admin.passwordHash
+          admin.passwordHash,
         );
 
         if (!isPasswordValid) {
-          throw new Error('Invalid email or password');
+          throw new Error("Invalid email or password");
         }
 
         await prisma.admin.update({
@@ -79,7 +81,7 @@ export const authOptions: NextAuthOptions = {
           email: admin.email,
           name: admin.name,
           role: admin.role,
-          type: 'admin',
+          type: "admin",
         };
       },
     }),
@@ -88,10 +90,10 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       // Handle Google sign in
-      if (account?.provider === 'google') {
+      if (account?.provider === "google") {
         try {
           const email = user.email!;
-          
+
           // Check if user exists
           let dbUser = await prisma.user.findUnique({
             where: { email },
@@ -100,11 +102,11 @@ export const authOptions: NextAuthOptions = {
           if (!dbUser) {
             // Get default free tier
             const freeTier = await prisma.tier.findUnique({
-              where: { slug: 'free' },
+              where: { slug: "free" },
             });
 
             if (!freeTier) {
-              console.error('Free tier not found');
+              console.error("Free tier not found");
               return false;
             }
 
@@ -147,7 +149,7 @@ export const authOptions: NextAuthOptions = {
 
           return true;
         } catch (error) {
-          console.error('Error in signIn callback:', error);
+          console.error("Error in signIn callback:", error);
           return false;
         }
       }
@@ -160,12 +162,12 @@ export const authOptions: NextAuthOptions = {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
-        token.type = (user as any).type || 'user';
+        token.type = (user as any).type || "user";
         token.role = (user as any).role;
       }
 
       // For Google sign in, fetch user from database
-      if (account?.provider === 'google' && token.email) {
+      if (account?.provider === "google" && token.email) {
         const dbUser = await prisma.user.findUnique({
           where: { email: token.email },
           include: { tier: true },
@@ -173,7 +175,7 @@ export const authOptions: NextAuthOptions = {
 
         if (dbUser) {
           token.id = dbUser.id;
-          token.type = 'user';
+          token.type = "user";
           token.tierId = dbUser.tierId;
           token.tierName = dbUser.tier.name;
         }
@@ -197,12 +199,12 @@ export const authOptions: NextAuthOptions = {
   },
 
   pages: {
-    signIn: '/login',
-    error: '/login',
+    signIn: "/login",
+    error: "/login",
   },
 
   session: {
-    strategy: 'jwt',
+    strategy: "jwt",
     maxAge: 30 * 24 * 60 * 60, // 30 days for users
   },
 

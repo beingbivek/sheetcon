@@ -71,7 +71,7 @@ export default async function TierDetailsPage({
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <StatCard
           label="Price"
-          value={`₹${tier.price}/mo`}
+          value={`NPR ${tier.price}/mo`}
           icon="💰"
           color="blue"
         />

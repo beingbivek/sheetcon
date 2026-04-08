@@ -68,7 +68,7 @@ export default function FinanceDashboard({ transactions }: FinanceDashboardProps
             <p className="text-slate-600">Total Income</p>
             <span className="text-2xl">💵</span>
           </div>
-          <p className="text-3xl font-bold text-green-600">₹{stats.income.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-green-600">NPR {stats.income.toLocaleString()}</p>
           <p className="text-sm text-slate-500 mt-1">This month</p>
         </div>
 
@@ -77,7 +77,7 @@ export default function FinanceDashboard({ transactions }: FinanceDashboardProps
             <p className="text-slate-600">Total Expenses</p>
             <span className="text-2xl">💸</span>
           </div>
-          <p className="text-3xl font-bold text-red-600">₹{stats.expenses.toLocaleString()}</p>
+          <p className="text-3xl font-bold text-red-600">NPR {stats.expenses.toLocaleString()}</p>
           <p className="text-sm text-slate-500 mt-1">This month</p>
         </div>
 
@@ -87,7 +87,7 @@ export default function FinanceDashboard({ transactions }: FinanceDashboardProps
             <span className="text-2xl">💰</span>
           </div>
           <p className={`text-3xl font-bold ${stats.balance >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
-            ₹{stats.balance.toLocaleString()}
+            NPR {stats.balance.toLocaleString()}
           </p>
           <p className="text-sm text-slate-500 mt-1">
             {stats.transactionCount} transactions
@@ -108,7 +108,7 @@ export default function FinanceDashboard({ transactions }: FinanceDashboardProps
                   <div key={category}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-sm font-medium text-slate-700">{category}</span>
-                      <span className="text-sm text-slate-600">₹{amount.toLocaleString()}</span>
+                      <span className="text-sm text-slate-600">NPR {amount.toLocaleString()}</span>
                     </div>
                     <div className="w-full bg-slate-200 rounded-full h-2">
                       <div
@@ -155,7 +155,7 @@ export default function FinanceDashboard({ transactions }: FinanceDashboardProps
                     transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                   }`}
                 >
-                  {transaction.type === 'income' ? '+' : '-'}₹{transaction.amount.toLocaleString()}
+                  {transaction.type === 'income' ? '+' : '-'}NPR {transaction.amount.toLocaleString()}
                 </p>
               </div>
             ))}

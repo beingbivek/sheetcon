@@ -125,7 +125,7 @@ export default async function AnalyticsPage() {
         />
         <StatCard
           label="Monthly Revenue"
-          value={`₹${mrr.toLocaleString()}`}
+          value={`NPR ${mrr.toLocaleString()}`}
           change="MRR"
           icon="💰"
           color="purple"
@@ -190,7 +190,7 @@ export default async function AnalyticsPage() {
                 <div key={tier.slug} className="flex items-center justify-between">
                   <span className="text-slate-300">{tier.name}</span>
                   <div className="text-right">
-                    <span className="text-white font-medium">₹{tierRevenue.toLocaleString()}</span>
+                    <span className="text-white font-medium">NPR {tierRevenue.toLocaleString()}</span>
                     <span className="text-slate-400 text-sm ml-2">/mo</span>
                   </div>
                 </div>
@@ -198,7 +198,7 @@ export default async function AnalyticsPage() {
             })}
             <div className="pt-4 border-t border-slate-700 flex items-center justify-between">
               <span className="text-white font-semibold">Total MRR</span>
-              <span className="text-green-400 font-bold">₹{mrr.toLocaleString()}</span>
+              <span className="text-green-400 font-bold">NPR {mrr.toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -209,7 +209,7 @@ export default async function AnalyticsPage() {
           <div className="space-y-4">
             <QuickStat label="Active Tiers" value={totalTiers.toString()} />
             <QuickStat label="Avg Users/Tier" value={(totalUsers / totalTiers || 0).toFixed(1)} />
-            <QuickStat label="Avg Revenue/User" value={`₹${(mrr / totalUsers || 0).toFixed(2)}`} />
+            <QuickStat label="Avg Revenue/User" value={`NPR ${(mrr / totalUsers || 0).toFixed(2)}`} />
             <QuickStat label="Free Users" value={tierDistribution.find(t => t.slug === 'free')?._count.users.toString() || '0'} />
             <QuickStat label="Paid Users" value={(totalUsers - (tierDistribution.find(t => t.slug === 'free')?._count.users || 0)).toString()} />
           </div>

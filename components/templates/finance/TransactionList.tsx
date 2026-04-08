@@ -125,7 +125,7 @@ export default function TransactionList({ transactions, onEdit, onDelete }: Tran
                       transaction.type === 'income' ? 'text-green-600' : 'text-red-600'
                     }`}
                   >
-                    {transaction.type === 'income' ? '+' : '-'}₹{transaction.amount.toLocaleString()}
+                    {transaction.type === 'income' ? '+' : '-'}NPR {transaction.amount.toLocaleString()}
                   </td>
                   <td className="py-3 px-4 text-right">
                     <button

@@ -1,102 +1,97 @@
 // app/api/user/sheets/[id]/data/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import {
+  requireAuth,
+  verifySheetOwnershipByEmail,
+  checkAndIncrementCrudLimit,
+  requireRateLimit,
+  validateInput,
+  transactionCreateSchema,
+  errorResponse,
+} from '@/lib/security';
+import { readTransactions, appendTransaction } from '@/lib/google-sheet';
 import { prisma } from '@/lib/db';
-import { mockDataStore } from '@/lib/mock-data-store';
 
-// GET - Fetch all transactions
+// GET - Fetch all transactions from Google Sheet
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const user = await requireAuth();
+    await requireRateLimit(request, user.id, 'relaxed');
+    
     const { id } = await params;
+    const { connection } = await verifySheetOwnershipByEmail(user.email, id);
+    
+    const transactions = await readTransactions(
+      connection.user.id,
+      connection.spreadsheetId
+    );
 
-    // Verify connection belongs to user
-    const connection = await prisma.sheetConnection.findFirst({
-      where: {
-        id,
-        user: { email: session.user.email! },
+    await prisma.sheetConnection.update({
+      where: { id: connection.id },
+      data: { 
+        lastSyncedAt: new Date(),
+        syncStatus: 'ACTIVE',
+        syncError: null,
       },
     });
 
-    if (!connection) {
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
-
-    // Get transactions from mock store
-    const transactions = mockDataStore.getTransactions(id);
-
     return NextResponse.json({ transactions });
-  } catch (error: any) {
-    console.error('Error fetching data:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to fetch data' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    try {
+      const { id } = await params;
+      await prisma.sheetConnection.update({
+        where: { id },
+        data: { 
+          syncStatus: 'ERROR',
+          syncError: error instanceof Error ? error.message : 'Unknown error',
+        },
+      }).catch(() => {});
+    } catch {}
+    
+    return errorResponse(error);
   }
 }
 
-// POST - Add new transaction
+// POST - Add new transaction to Google Sheet
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
-    if (!session) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
+    const user = await requireAuth();
+    await requireRateLimit(request, user.id, 'api');
+    
     const { id } = await params;
-    const body = await request.json();
+    const rawBody = await request.json();
+    const body = validateInput(transactionCreateSchema, rawBody);
+    
+    const { connection } = await verifySheetOwnershipByEmail(user.email, id);
+    
+    await checkAndIncrementCrudLimit(connection.user.id);
+    
+    const newTransaction = await appendTransaction(
+      connection.user.id,
+      connection.spreadsheetId,
+      {
+        date: body.date,
+        description: body.description,
+        category: body.category,
+        type: body.type,
+        amount: body.amount,
+      }
+    );
 
-    // Verify connection
-    const connection = await prisma.sheetConnection.findFirst({
-      where: {
-        id,
-        user: { email: session.user.email! },
-      },
-      include: { user: { include: { tier: true } } },
-    });
-
-    if (!connection) {
-      return NextResponse.json({ error: 'Connection not found' }, { status: 404 });
-    }
-
-    // Check CRUD limits
-    const user = connection.user;
-    if (user.tier.maxCrudPerDay !== -1 && user.crudCountToday >= user.tier.maxCrudPerDay) {
-      return NextResponse.json(
-        { error: 'Daily CRUD limit reached. Upgrade your plan to continue.' },
-        { status: 429 }
-      );
-    }
-
-    // Add transaction using mock store
-    const newTransaction = mockDataStore.addTransaction(id, body);
-
-    // Increment CRUD count
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        crudCountToday: { increment: 1 },
-      },
+    await prisma.sheetConnection.update({
+      where: { id: connection.id },
+      data: { lastSyncedAt: new Date() },
     });
 
     return NextResponse.json({ success: true, transaction: newTransaction });
-  } catch (error: any) {
-    console.error('Error adding transaction:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to add transaction' },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    return errorResponse(error);
   }
 }

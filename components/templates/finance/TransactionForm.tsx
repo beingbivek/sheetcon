@@ -110,7 +110,7 @@ export default function TransactionForm({ transaction, onSubmit, onCancel }: Tra
 
       {/* Amount */}
       <div>
-        <label className="block text-sm font-medium text-slate-700 mb-1">Amount (₹)</label>
+        <label className="block text-sm font-medium text-slate-700 mb-1">Amount (NPR )</label>
         <input
           type="number"
           step="0.01"
