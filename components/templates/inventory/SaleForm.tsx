@@ -4,6 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { Product, Customer, SaleItem } from './InventoryApp';
+import LoadingButton from '@/components/ui/LoadingButton';
 
 interface SaleFormProps {
   products: Product[];
@@ -37,7 +38,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
     c.phone.includes(customerSearch)
   );
 
-  const availableProducts = products.filter(p => 
+  const availableProducts = products.filter(p =>
     p.stock > 0 && !items.some(item => item.productId === p.id)
   );
 
@@ -56,17 +57,17 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
   const updateItem = (index: number, field: string, value: any) => {
     const newItems = [...items];
     const item = newItems[index];
-    
+
     (item as any)[field] = value;
-    
+
     // Validate quantity
     if (field === 'quantity') {
       item.quantity = Math.min(Math.max(1, parseInt(value) || 1), item.productStock);
     }
-    
+
     // Recalculate total
     item.total = (item.quantity * item.unitPrice) - item.discount;
-    
+
     setItems(newItems);
   };
 
@@ -178,7 +179,7 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
         <label className="block text-sm font-medium text-slate-700 mb-2">
           Items *
         </label>
-        
+
         {/* Add Product */}
         <div className="mb-4">
           <select
@@ -394,23 +395,20 @@ export default function SaleForm({ products, customers, onSubmit, onCancel, load
           type="button"
           onClick={onCancel}
           disabled={loading}
-          className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+          className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Cancel
         </button>
-        <button
+        <LoadingButton
           type="submit"
-          disabled={loading || items.length === 0 || !selectedCustomer}
-          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          loading={loading}
+          loadingText="Creating Sale..."
+          variant="success"
+          className="flex-1"
+          disabled={items.length === 0 || !selectedCustomer}
         >
-          {loading && (
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          )}
           Create Sale
-        </button>
+        </LoadingButton>
       </div>
     </form>
   );
