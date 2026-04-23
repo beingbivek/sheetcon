@@ -23,7 +23,7 @@ CREATE TABLE "Tier" (
     "slug" TEXT NOT NULL,
     "description" TEXT,
     "price" DOUBLE PRECISION NOT NULL DEFAULT 0,
-    "currency" TEXT NOT NULL DEFAULT 'INR',
+    "currency" TEXT NOT NULL DEFAULT 'NPR ',
     "maxUsers" INTEGER NOT NULL DEFAULT -1,
     "currentUserCount" INTEGER NOT NULL DEFAULT 0,
     "maxSheets" INTEGER NOT NULL DEFAULT 1,

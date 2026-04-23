@@ -55,7 +55,7 @@ export const tierCreateSchema = z.object({
   slug: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with dashes'),
   description: z.string().max(500).optional(),
   price: z.number().min(0),
-  currency: z.string().length(3).default('INR'),
+  currency: z.string().length(3).default('NPR '),
   maxUsers: z.number().int().min(-1).default(-1),
   maxSheets: z.number().int().min(-1).default(1),
   maxTemplates: z.number().int().min(-1).default(1),

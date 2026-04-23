@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         slug: body.slug,
         description: body.description || null,
         price: body.price || 0,
-        currency: body.currency || 'INR',
+        currency: body.currency || 'NPR ',
         maxUsers: body.maxUsers ?? -1,
         maxSheets: body.maxSheets ?? 1,
         maxTemplates: body.maxTemplates ?? 1,
