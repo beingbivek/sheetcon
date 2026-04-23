@@ -1,10 +1,10 @@
 // lib/security/authorization.ts
 
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/db';
-import { Errors, ApiError, logError } from './errors';
-import { NextRequest } from 'next/server';
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/db";
+import { Errors, ApiError, logError } from "./errors";
+import { NextRequest } from "next/server";
 
 /**
  * Authorization utilities for secure access control
@@ -19,7 +19,7 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string | null;
-  type: 'user' | 'admin';
+  type: "user" | "admin";
   role?: string;
   tierId?: string;
   tierSlug?: string;
@@ -29,8 +29,8 @@ export interface AuthenticatedAdmin {
   id: string;
   email: string;
   name: string;
-  type: 'admin';
-  role: 'SUPER_ADMIN' | 'ADMIN' | 'SUPPORT';
+  type: "admin";
+  role: "SUPER_ADMIN" | "ADMIN" | "SUPPORT";
 }
 
 // ═══════════════════════════════════════════════════
@@ -43,43 +43,49 @@ export interface AuthenticatedAdmin {
  */
 export async function requireAuth(): Promise<AuthenticatedUser> {
   const session = await getServerSession(authOptions);
-  
+
   if (!session?.user?.email) {
     throw Errors.unauthorized();
   }
-  
+
   const user = session.user as any;
-  
+
   // Check if user is banned (for regular users)
-  if (user.type === 'user') {
+  if (user.type === "user") {
     const dbUser = await prisma.user.findUnique({
       where: { email: user.email },
-      select: { id: true, isBanned: true, isActive: true, tierId: true, tier: { select: { slug: true } } },
+      select: {
+        id: true,
+        isBanned: true,
+        isActive: true,
+        tierId: true,
+        tier: { select: { slug: true } },
+      },
     });
-    
+
     if (!dbUser) {
-      throw Errors.notFound('User');
+      throw Errors.notFound("User");
     }
-    
+
     if (dbUser.isBanned || !dbUser.isActive) {
-      throw new ApiError('FORBIDDEN', 'Your account has been suspended.');
+      throw new ApiError("FORBIDDEN", "Your account has been suspended.");
     }
-    
+
     return {
       id: dbUser.id,
       email: user.email,
       name: user.name,
-      type: 'user',
+      type: "user",
       tierId: dbUser.tierId,
       tierSlug: dbUser.tier.slug,
     };
   }
-  
+
   return {
     id: user.id,
     email: user.email,
     name: user.name,
-    type: user.type || 'user',
+    type: user.type || "user",
     role: user.role,
   };
 }
@@ -88,41 +94,48 @@ export async function requireAuth(): Promise<AuthenticatedUser> {
  * Require admin authentication with role check
  */
 export async function requireAdmin(
-  allowedRoles: ('SUPER_ADMIN' | 'ADMIN' | 'SUPPORT')[] = ['SUPER_ADMIN', 'ADMIN', 'SUPPORT']
+  allowedRoles: ("SUPER_ADMIN" | "ADMIN" | "SUPPORT")[] = [
+    "SUPER_ADMIN",
+    "ADMIN",
+    "SUPPORT",
+  ],
 ): Promise<AuthenticatedAdmin> {
   const session = await getServerSession(authOptions);
-  
+
   if (!session?.user?.email) {
     throw Errors.unauthorized();
   }
-  
+
   const user = session.user as any;
-  
+
   // Verify this is an admin session
-  if (user.type !== 'admin') {
+  if (user.type !== "admin") {
     throw Errors.forbidden();
   }
-  
+
   // Verify admin exists and is active
   const admin = await prisma.admin.findUnique({
     where: { email: user.email },
     select: { id: true, email: true, name: true, role: true, isActive: true },
   });
-  
+
   if (!admin || !admin.isActive) {
     throw Errors.forbidden();
   }
-  
+
   // Check role permission
   if (!allowedRoles.includes(admin.role)) {
-    throw new ApiError('FORBIDDEN', 'Insufficient permissions for this action.');
+    throw new ApiError(
+      "FORBIDDEN",
+      "Insufficient permissions for this action.",
+    );
   }
-  
+
   return {
     id: admin.id,
     email: admin.email,
     name: admin.name,
-    type: 'admin',
+    type: "admin",
     role: admin.role,
   };
 }
@@ -131,7 +144,7 @@ export async function requireAdmin(
  * Require SUPER_ADMIN role (for sensitive operations like tier changes)
  */
 export async function requireSuperAdmin(): Promise<AuthenticatedAdmin> {
-  return requireAdmin(['SUPER_ADMIN']);
+  return requireAdmin(["SUPER_ADMIN"]);
 }
 
 // ═══════════════════════════════════════════════════
@@ -144,7 +157,7 @@ export async function requireSuperAdmin(): Promise<AuthenticatedAdmin> {
  */
 export async function verifySheetOwnership(
   userId: string,
-  connectionId: string
+  connectionId: string,
 ): Promise<{
   connection: any;
   user: any;
@@ -161,11 +174,11 @@ export async function verifySheetOwnership(
       },
     },
   });
-  
+
   if (!connection) {
-    throw Errors.notFound('Sheet connection');
+    throw Errors.notFound("Sheet connection");
   }
-  
+
   return {
     connection,
     user: connection.user,
@@ -177,7 +190,7 @@ export async function verifySheetOwnership(
  */
 export async function verifySheetOwnershipByEmail(
   userEmail: string,
-  connectionId: string
+  connectionId: string,
 ): Promise<{
   connection: any;
   user: any;
@@ -194,11 +207,11 @@ export async function verifySheetOwnershipByEmail(
       },
     },
   });
-  
+
   if (!connection) {
-    throw Errors.notFound('Sheet connection');
+    throw Errors.notFound("Sheet connection");
   }
-  
+
   return {
     connection,
     user: connection.user,
@@ -210,19 +223,19 @@ export async function verifySheetOwnershipByEmail(
  * Returns the resource if owned, throws if not
  */
 export async function verifyOwnership<T>(
-  model: 'sheetConnection' | 'user',
+  model: "sheetConnection" | "user",
   resourceId: string,
-  userId: string
+  userId: string,
 ): Promise<T> {
   let resource: any;
-  
+
   switch (model) {
-    case 'sheetConnection':
+    case "sheetConnection":
       resource = await prisma.sheetConnection.findFirst({
         where: { id: resourceId, userId },
       });
       break;
-    case 'user':
+    case "user":
       resource = await prisma.user.findFirst({
         where: { id: resourceId },
       });
@@ -232,11 +245,11 @@ export async function verifyOwnership<T>(
       }
       break;
   }
-  
+
   if (!resource) {
     throw Errors.notFound();
   }
-  
+
   return resource as T;
 }
 
@@ -249,40 +262,49 @@ export async function verifyOwnership<T>(
  * Returns the user with updated count
  */
 
-export async function checkAndIncrementCrudLimit(userId: string): Promise<void> {
+export async function checkAndIncrementCrudLimit(
+  userId: string,
+): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { tier: true },
   });
-  
+
   if (!user) {
-    throw Errors.notFound('User');
+    throw Errors.notFound("User");
   }
-  
+
   // Reset daily count if new day
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const lastReset = new Date(user.lastCrudReset);  // ← CORRECT FIELD NAME
-  const lastResetDay = new Date(lastReset.getFullYear(), lastReset.getMonth(), lastReset.getDate());
-  
+  const lastReset = new Date(user.lastCrudReset); // ← CORRECT FIELD NAME
+  const lastResetDay = new Date(
+    lastReset.getFullYear(),
+    lastReset.getMonth(),
+    lastReset.getDate(),
+  );
+
   let currentCount = user.crudCountToday;
-  
+
   if (today > lastResetDay) {
     await prisma.user.update({
       where: { id: userId },
       data: {
         crudCountToday: 1,
-        lastCrudReset: now,  // ← CORRECT FIELD NAME
+        lastCrudReset: now, // ← CORRECT FIELD NAME
       },
     });
     return;
   }
-  
+
   // Check limit
-  if (user.tier.maxCrudPerDay !== -1 && currentCount >= user.tier.maxCrudPerDay) {
+  if (
+    user.tier.maxCrudPerDay !== -1 &&
+    currentCount >= user.tier.maxCrudPerDay
+  ) {
     throw Errors.crudLimit();
   }
-  
+
   // Increment
   await prisma.user.update({
     where: { id: userId },
@@ -293,7 +315,10 @@ export async function checkAndIncrementCrudLimit(userId: string): Promise<void> 
 /**
  * Increment CRUD count (when operation succeeded)
  */
-export async function incrementCrudCount(userId: string, count: number = 1): Promise<void> {
+export async function incrementCrudCount(
+  userId: string,
+  count: number = 1,
+): Promise<void> {
   await prisma.user.update({
     where: { id: userId },
     data: { crudCountToday: { increment: count } },
@@ -309,17 +334,17 @@ export async function incrementCrudCount(userId: string, count: number = 1): Pro
  */
 export async function checkFeatureAccess(
   userId: string,
-  feature: 'exportToPdf' | 'customBranding' | 'prioritySupport'
+  feature: "exportToPdf" | "customBranding" | "prioritySupport",
 ): Promise<boolean> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { tier: true },
   });
-  
+
   if (!user) {
     return false;
   }
-  
+
   return user.tier[feature];
 }
 
@@ -328,14 +353,14 @@ export async function checkFeatureAccess(
  */
 export async function requireFeatureAccess(
   userId: string,
-  feature: 'exportToPdf' | 'customBranding' | 'prioritySupport'
+  feature: "exportToPdf" | "customBranding" | "prioritySupport",
 ): Promise<void> {
   const hasAccess = await checkFeatureAccess(userId, feature);
-  
+
   if (!hasAccess) {
     throw new ApiError(
-      'FORBIDDEN',
-      `This feature requires an upgrade. Please upgrade your plan to access ${feature}.`
+      "FORBIDDEN",
+      `This feature requires an upgrade. Please upgrade your plan to access ${feature}.`,
     );
   }
 }
@@ -349,21 +374,21 @@ export async function requireFeatureAccess(
  * These require admin/system permissions
  */
 const PROTECTED_USER_FIELDS = [
-  'id',
-  'email', // Can only be changed via OAuth
-  'tierId',
-  'googleId',
-  'accessToken',
-  'refreshToken',
-  'tokenExpiresAt',
-  'isActive',
-  'isBanned',
-  'banReason',
-  'crudCountToday',
-  'lastCrudResetAt',
-  'emailVerified',
-  'createdAt',
-  'updatedAt',
+  "id",
+  "email", // Can only be changed via OAuth
+  "tierId",
+  "googleId",
+  "accessToken",
+  "refreshToken",
+  "tokenExpiresAt",
+  "isActive",
+  "isBanned",
+  "banReason",
+  "crudCountToday",
+  "lastCrudResetAt",
+  "emailVerified",
+  "createdAt",
+  "updatedAt",
 ];
 
 /**
@@ -372,16 +397,16 @@ const PROTECTED_USER_FIELDS = [
  */
 export function filterProtectedFields<T extends Record<string, any>>(
   data: T,
-  protectedFields: string[] = PROTECTED_USER_FIELDS
+  protectedFields: string[] = PROTECTED_USER_FIELDS,
 ): Partial<T> {
   const filtered: any = {};
-  
+
   for (const [key, value] of Object.entries(data)) {
     if (!protectedFields.includes(key)) {
       filtered[key] = value;
     }
   }
-  
+
   return filtered;
 }
 
@@ -391,14 +416,109 @@ export function filterProtectedFields<T extends Record<string, any>>(
  */
 export function ensureNoProtectedFields(
   data: Record<string, any>,
-  protectedFields: string[] = PROTECTED_USER_FIELDS
+  protectedFields: string[] = PROTECTED_USER_FIELDS,
 ): void {
-  const found = Object.keys(data).filter(key => protectedFields.includes(key));
-  
+  const found = Object.keys(data).filter((key) =>
+    protectedFields.includes(key),
+  );
+
   if (found.length > 0) {
     throw new ApiError(
-      'FORBIDDEN',
-      `Cannot modify protected fields: ${found.join(', ')}`
+      "FORBIDDEN",
+      `Cannot modify protected fields: ${found.join(", ")}`,
     );
+  }
+}
+
+// Add to existing lib/security/authorization.ts
+
+/**
+ * Check if user has an active pending payment request
+ */
+export async function hasActivePendingPayment(
+  userId: string,
+): Promise<boolean> {
+  const activePayment = await prisma.paymentRequest.findFirst({
+    where: {
+      userId,
+      status: {
+        in: ["AWAITING_PAYMENT", "UNDER_REVIEW"],
+      },
+      expiresAt: {
+        gt: new Date(),
+      },
+    },
+  });
+
+  return !!activePayment;
+}
+
+/**
+ * Verify payment request ownership
+ */
+export async function verifyPaymentOwnership(
+  userId: string,
+  paymentId: string,
+): Promise<any> {
+  const payment = await prisma.paymentRequest.findFirst({
+    where: {
+      id: paymentId,
+      userId,
+    },
+    include: {
+      user: {
+        include: { tier: true },
+      },
+      requestedTier: true,
+    },
+  });
+
+  if (!payment) {
+    throw Errors.notFound("Payment request");
+  }
+
+  return payment;
+}
+
+/**
+ * Check subscription validity
+ * Auto-expire if needed
+ */
+export async function checkSubscriptionValidity(userId: string): Promise<void> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    include: { tier: true },
+  });
+
+  if (!user) {
+    throw Errors.notFound("User");
+  }
+
+  // Skip if free tier
+  if (user.tier.price === 0) {
+    return;
+  }
+
+  // Check if subscription expired
+  if (
+    user.subscriptionExpiresAt &&
+    user.subscriptionExpiresAt < new Date() &&
+    user.subscriptionStatus === "ACTIVE"
+  ) {
+    // Get free tier
+    const freeTier = await prisma.tier.findUnique({
+      where: { slug: "free" },
+    });
+
+    if (freeTier) {
+      // Downgrade to free tier
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          subscriptionStatus: "EXPIRED",
+          tierId: freeTier.id,
+        },
+      });
+    }
   }
 }

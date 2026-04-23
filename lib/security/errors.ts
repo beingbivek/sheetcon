@@ -1,5 +1,7 @@
 // lib/security/errors.ts
 
+import { NextResponse } from 'next/server';
+
 /**
  * Security-focused error handling
  * - Masks internal errors in production
@@ -105,8 +107,6 @@ export function logError(error: Error, context?: Record<string, any>): void {
     ...context,
   };
   
-  // In production, you'd send this to a logging service
-  // For now, console.error (only visible server-side)
   console.error('[SheetCon Error]', JSON.stringify(errorLog, null, 2));
 }
 
@@ -167,13 +167,32 @@ export function maskError(error: unknown): { code: string; message: string; stat
 }
 
 /**
+ * Wrapper function for API route handlers.
+ * Catches errors and returns a formatted error response.
+ * Usage:
+ * export async function GET(request: NextRequest) {
+ *   return handleApiError(async () => {
+ *     // your logic here
+ *     return NextResponse.json({ data });
+ *   });
+ * }
+ */
+export async function handleApiError(
+  handler: () => Promise<NextResponse> | NextResponse
+): Promise<NextResponse> {
+  try {
+    return await handler();
+  } catch (error: unknown) {
+    return errorResponse(error);
+  }
+}
+
+/**
  * Create error response for API routes
  */
 export function errorResponse(error: unknown) {
   const { code, message, statusCode } = maskError(error);
   
-  // Use NextResponse if available, otherwise return object
-  const { NextResponse } = require('next/server');
   return NextResponse.json(
     { error: message, code },
     { status: statusCode }

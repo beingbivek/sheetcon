@@ -3,6 +3,7 @@
 import { google } from 'googleapis';
 import { OAuth2Client } from 'google-auth-library';
 import { prisma } from '@/lib/db';
+import { ApiError } from '@/lib/security/errors';
 import { queueReadRequest, queueWriteRequest } from './google-sheets-queue';
 import {
   getOrFetch,
@@ -53,8 +54,20 @@ export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
     select: { accessToken: true, refreshToken: true },
   });
 
-  if (!user || !user.accessToken) {
-    throw new Error('User not authenticated with Google.');
+  // User record missing entirely
+  if (!user) {
+    throw new ApiError(
+      'GOOGLE_AUTH_ERROR',
+      'User not found. Please sign in again.'
+    );
+  }
+
+  // User exists but never completed Google OAuth (e.g. seeded test users)
+  if (!user.accessToken) {
+    throw new ApiError(
+      'GOOGLE_AUTH_ERROR',
+      'Google account not connected. Please sign out and sign back in with Google to grant Sheets access.'
+    );
   }
 
   const oauth2Client = new OAuth2Client(
@@ -65,16 +78,17 @@ export async function getOAuth2Client(userId: string): Promise<OAuth2Client> {
 
   oauth2Client.setCredentials({
     access_token: user.accessToken,
-    refresh_token: user.refreshToken,
+    refresh_token: user.refreshToken ?? undefined,
   });
 
+  // Persist refreshed tokens automatically
   oauth2Client.on('tokens', async (tokens) => {
     if (tokens.access_token) {
       await prisma.user.update({
         where: { id: userId },
         data: {
           accessToken: tokens.access_token,
-          refreshToken: tokens.refresh_token || user.refreshToken,
+          ...(tokens.refresh_token && { refreshToken: tokens.refresh_token }),
         },
       });
     }
@@ -112,7 +126,8 @@ async function _readTransactionsRaw(
       type: (row[4] || 'expense') as 'income' | 'expense',
       amount: parseFloat(row[5]) || 0,
     })).filter(t => t.id);
-  } catch {
+  } catch (err) {
+    // Try Sheet1 as fallback for existing sheets not named Transactions
     try {
       const fallbackRes = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -303,7 +318,6 @@ export async function createFinanceSpreadsheet(
     };
   }, 'HIGH');
 
-  // Invalidate user's spreadsheet list cache
   await invalidateCache(getCacheKey(CACHE_PREFIX.SPREADSHEETS, userId));
 
   return result;
@@ -372,7 +386,6 @@ export async function appendTransaction(
     return { id, ...transaction };
   }, 'HIGH');
 
-  // Invalidate transactions cache
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
 
@@ -419,7 +432,6 @@ export async function updateTransaction(
     return updated;
   }, 'HIGH');
 
-  // Invalidate transactions cache
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
 
@@ -469,7 +481,6 @@ export async function deleteTransaction(
     return true;
   });
 
-  // Invalidate transactions cache
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, sheetName));
   await invalidateCache(getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'Transactions'));
 
@@ -484,7 +495,7 @@ export function extractSpreadsheetId(urlOrId: string): string {
   if (!urlOrId.includes('/')) return urlOrId;
 
   const match = urlOrId.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
-  if (!match) throw new Error('Invalid URL');
+  if (!match) throw new Error('Invalid Google Sheets URL');
 
   return match[1];
 }
