@@ -1,21 +1,18 @@
 // app/admin/analytics/page.tsx
 
 import { prisma } from '@/lib/db';
-import { format, subDays, startOfDay, endOfDay } from 'date-fns';
+import { format, subDays } from 'date-fns';
 import UserGrowthChart from '@/components/admin/charts/UserGrowthChart';
 import TierDistributionChart from '@/components/admin/charts/TierDistributionChart';
 import UsageChart from '@/components/admin/charts/UsageChart';
 
 export default async function AnalyticsPage() {
-  // Get date ranges
   const today = new Date();
   const last30Days = subDays(today, 30);
-  const last7Days = subDays(today, 7);
   const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const lastMonthStart = new Date(today.getFullYear(), today.getMonth() - 1, 1);
   const lastMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
 
-  // Fetch all analytics data in parallel
   const [
     totalUsers,
     activeUsers,
@@ -27,31 +24,12 @@ export default async function AnalyticsPage() {
     recentUsers,
     usersLast30Days,
   ] = await Promise.all([
-    // Total users
     prisma.user.count(),
-    
-    // Active users (not banned)
     prisma.user.count({ where: { isActive: true, isBanned: false } }),
-    
-    // Banned users
     prisma.user.count({ where: { isBanned: true } }),
-    
-    // New users this month
-    prisma.user.count({
-      where: { createdAt: { gte: thisMonthStart } },
-    }),
-    
-    // New users last month
-    prisma.user.count({
-      where: {
-        createdAt: { gte: lastMonthStart, lte: lastMonthEnd },
-      },
-    }),
-    
-    // Total tiers
+    prisma.user.count({ where: { createdAt: { gte: thisMonthStart } } }),
+    prisma.user.count({ where: { createdAt: { gte: lastMonthStart, lte: lastMonthEnd } } }),
     prisma.tier.count({ where: { isActive: true } }),
-    
-    // Tier distribution
     prisma.tier.findMany({
       where: { isActive: true },
       select: {
@@ -62,15 +40,11 @@ export default async function AnalyticsPage() {
       },
       orderBy: { displayOrder: 'asc' },
     }),
-    
-    // Recent users (last 10)
     prisma.user.findMany({
       take: 10,
       orderBy: { createdAt: 'desc' },
       include: { tier: { select: { name: true } } },
     }),
-    
-    // User signups per day (last 30 days)
     prisma.user.groupBy({
       by: ['createdAt'],
       _count: { id: true },
@@ -79,20 +53,14 @@ export default async function AnalyticsPage() {
     }),
   ]);
 
-  // Calculate metrics
   const monthlyGrowth = newUsersLastMonth > 0
     ? ((newUsersThisMonth - newUsersLastMonth) / newUsersLastMonth * 100).toFixed(1)
     : newUsersThisMonth > 0 ? '100' : '0';
 
-  // Calculate MRR (Monthly Recurring Revenue)
-  const mrr = tierDistribution.reduce((sum, tier) => {
-    return sum + (tier.price * tier._count.users);
-  }, 0);
+  const mrr = tierDistribution.reduce((sum, tier) => sum + (tier.price * tier._count.users), 0);
 
-  // Process user growth data for chart
-  const userGrowthData = processUserGrowthData(usersLast30Days, last30Days);
+  const userGrowthData = processUserGrowthData(usersLast30Days);
 
-  // Process tier distribution for chart
   const tierChartData = tierDistribution.map(tier => ({
     name: tier.name,
     value: tier._count.users,
@@ -101,13 +69,11 @@ export default async function AnalyticsPage() {
 
   return (
     <div>
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-2">Analytics</h1>
         <p className="text-slate-400">Platform overview and insights</p>
       </div>
 
-      {/* Main Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         <StatCard
           label="Total Users"
@@ -139,34 +105,25 @@ export default async function AnalyticsPage() {
         />
       </div>
 
-      {/* Charts Row */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* User Growth Chart */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-4">User Growth (Last 30 Days)</h2>
           <UserGrowthChart data={userGrowthData} />
         </div>
-
-        {/* Tier Distribution Chart */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-4">Tier Distribution</h2>
           <TierDistributionChart data={tierChartData} />
         </div>
       </div>
 
-      {/* Secondary Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-        {/* Tier Breakdown */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-4">Tier Breakdown</h2>
           <div className="space-y-4">
             {tierDistribution.map((tier) => (
               <div key={tier.slug} className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: getTierColor(tier.slug) }}
-                  />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: getTierColor(tier.slug) }} />
                   <span className="text-slate-300">{tier.name}</span>
                 </div>
                 <div className="text-right">
@@ -180,7 +137,6 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Revenue by Tier */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-4">Revenue by Tier</h2>
           <div className="space-y-4">
@@ -203,20 +159,24 @@ export default async function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Quick Stats */}
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-4">Quick Stats</h2>
           <div className="space-y-4">
             <QuickStat label="Active Tiers" value={totalTiers.toString()} />
             <QuickStat label="Avg Users/Tier" value={(totalUsers / totalTiers || 0).toFixed(1)} />
             <QuickStat label="Avg Revenue/User" value={`NPR ${(mrr / totalUsers || 0).toFixed(2)}`} />
-            <QuickStat label="Free Users" value={tierDistribution.find(t => t.slug === 'free')?._count.users.toString() || '0'} />
-            <QuickStat label="Paid Users" value={(totalUsers - (tierDistribution.find(t => t.slug === 'free')?._count.users || 0)).toString()} />
+            <QuickStat
+              label="Free Users"
+              value={tierDistribution.find(t => t.slug === 'free')?._count.users.toString() || '0'}
+            />
+            <QuickStat
+              label="Paid Users"
+              value={(totalUsers - (tierDistribution.find(t => t.slug === 'free')?._count.users || 0)).toString()}
+            />
           </div>
         </div>
       </div>
 
-      {/* Recent Users */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 p-6">
         <h2 className="text-xl font-semibold text-white mb-4">Recent Signups</h2>
         <div className="overflow-x-auto">
@@ -255,7 +215,8 @@ export default async function AnalyticsPage() {
   );
 }
 
-// Helper Components
+// ── Helper Components ────────────────────────────────────────────────────────
+
 function StatCard({
   label,
   value,
@@ -269,11 +230,11 @@ function StatCard({
   icon: string;
   color: 'blue' | 'green' | 'purple' | 'red';
 }) {
-  const colorClasses = {
-    blue: 'from-blue-500 to-blue-600',
-    green: 'from-green-500 to-green-600',
+  const colorClasses: Record<string, string> = {
+    blue:   'from-blue-500 to-blue-600',
+    green:  'from-green-500 to-green-600',
     purple: 'from-purple-500 to-purple-600',
-    red: 'from-red-500 to-red-600',
+    red:    'from-red-500 to-red-600',
   };
 
   return (
@@ -298,42 +259,44 @@ function QuickStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-// Helper Functions
+// ── Helper Functions ─────────────────────────────────────────────────────────
+
 function getTierColor(slug: string): string {
   const colors: Record<string, string> = {
-    free: '#3b82f6',      // blue
-    pro: '#22c55e',       // green
-    business: '#a855f7',  // purple
+    free:     '#3b82f6',
+    pro:      '#22c55e',
+    business: '#a855f7',
   };
-  return colors[slug] || '#64748b';  // default gray
+  return colors[slug] || '#64748b';
 }
 
+// Matches UserGrowthChart's expected prop shape: { date: string; users: number }
 interface UserGrowthPoint {
-  date: string;      // e.g. "2026-10-12"
-  count: number;     // users created on that day
+  date: string;
+  users: number;
 }
 
+function processUserGrowthData(
+  rawData: { createdAt: Date; _count: { id: number } }[]
+): UserGrowthPoint[] {
+  // Build a lookup map: "MMM d" → total signups that day
+  const countByDay = new Map<string, number>();
 
-function processUserGrowthData(rawData: any[], startDate: Date): UserGrowthPoint[] {
-  // Create array of last 30 days
+  rawData.forEach((item) => {
+    const key = format(new Date(item.createdAt), 'MMM d');
+    countByDay.set(key, (countByDay.get(key) ?? 0) + item._count.id);
+  });
+
+  // Generate one entry per day for the last 30 days
   const data: UserGrowthPoint[] = [];
   for (let i = 29; i >= 0; i--) {
     const date = subDays(new Date(), i);
-    const dateStr = format(date, 'yyyy-MM-dd');
+    const key = format(date, 'MMM d');
     data.push({
-      date: format(date, 'MMM d'),
-      count: 0,
+      date: key,
+      users: countByDay.get(key) ?? 0,
     });
   }
-
-  // Fill in actual data
-  rawData.forEach((item) => {
-    const dateStr = format(new Date(item.createdAt), 'MMM d');
-    const existing = data.find(d => d.date === dateStr);
-    if (existing) {
-      existing.count += item._count.id;
-    }
-  });
 
   return data;
 }
