@@ -308,15 +308,21 @@ function getTierColor(slug: string): string {
   return colors[slug] || '#64748b';  // default gray
 }
 
-function processUserGrowthData(rawData: any[], startDate: Date): any[] {
+interface UserGrowthPoint {
+  date: string;      // e.g. "2026-10-12"
+  count: number;     // users created on that day
+}
+
+
+function processUserGrowthData(rawData: any[], startDate: Date): UserGrowthPoint[] {
   // Create array of last 30 days
-  const data: { date: string; count: number }[] = [];
+  const data: UserGrowthPoint[] = [];
   for (let i = 29; i >= 0; i--) {
     const date = subDays(new Date(), i);
     const dateStr = format(date, 'yyyy-MM-dd');
     data.push({
       date: format(date, 'MMM d'),
-      users: 0,
+      count: 0,
     });
   }
 
@@ -325,7 +331,7 @@ function processUserGrowthData(rawData: any[], startDate: Date): any[] {
     const dateStr = format(new Date(item.createdAt), 'MMM d');
     const existing = data.find(d => d.date === dateStr);
     if (existing) {
-      existing.users += item._count.id;
+      existing.count += item._count.id;
     }
   });
 
