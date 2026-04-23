@@ -35,19 +35,16 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
     e.preventDefault();
     setSaving(true);
     setMessage(null);
-
     try {
       const res = await fetch('/api/admin/settings/profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to update profile');
       }
-
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
     } catch (error: any) {
       setMessage({ type: 'error', text: error.message });
@@ -58,32 +55,26 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (newPassword !== confirmPassword) {
-      setMessage({ type: 'error', text: 'Passwords do not match' });
+      setMessage({ type: 'error', text: 'Passwords do not match.' });
       return;
     }
-
     if (newPassword.length < 6) {
-      setMessage({ type: 'error', text: 'Password must be at least 6 characters' });
+      setMessage({ type: 'error', text: 'Password must be at least 6 characters.' });
       return;
     }
-
     setSaving(true);
     setMessage(null);
-
     try {
       const res = await fetch('/api/admin/settings/password', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Failed to change password');
       }
-
       setMessage({ type: 'success', text: 'Password changed successfully!' });
       setCurrentPassword('');
       setNewPassword('');
@@ -108,9 +99,10 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
 
   return (
     <div>
+      {/* Page heading — dark theme */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white">Settings</h1>
-        <p className="text-slate-400 mt-1">Manage your admin account and system settings</p>
+        <p className="text-slate-400 mt-1">Manage your admin account and system configuration</p>
       </div>
 
       {/* Tabs */}
@@ -123,10 +115,10 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
           ].map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key as any)}
-              className={`pb-4 border-b-2 transition-colors ${
+              onClick={() => { setActiveTab(tab.key as any); setMessage(null); }}
+              className={`pb-4 border-b-2 transition-colors text-sm font-medium ${
                 activeTab === tab.key
-                  ? 'border-blue-500 text-blue-500 font-medium'
+                  ? 'border-blue-500 text-blue-400'
                   : 'border-transparent text-slate-400 hover:text-white'
               }`}
             >
@@ -136,10 +128,10 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
         </nav>
       </div>
 
-      {/* Message */}
+      {/* Message banner */}
       {message && (
-        <div className={`mb-6 p-4 rounded-lg ${
-          message.type === 'success' 
+        <div className={`mb-6 p-4 rounded-lg text-sm ${
+          message.type === 'success'
             ? 'bg-green-900/50 border border-green-700 text-green-300'
             : 'bg-red-900/50 border border-red-700 text-red-300'
         }`}>
@@ -147,64 +139,55 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
         </div>
       )}
 
-      {/* Profile Tab */}
+      {/* ── Profile Tab ─────────────────────────────── */}
       {activeTab === 'profile' && (
         <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
           <h2 className="text-xl font-semibold text-white mb-6">Profile Information</h2>
-          
           <form onSubmit={handleUpdateProfile} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Name
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Name</label>
                 <input
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
+                  required
                   className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Email
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Email</label>
                 <input
                   type="email"
                   value={admin.email}
                   disabled
-                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-400 cursor-not-allowed"
+                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Role
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Role</label>
                 <input
                   type="text"
-                  value={admin.role}
+                  value={admin.role.replace('_', ' ')}
                   disabled
-                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-400 cursor-not-allowed"
+                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Member Since
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Member Since</label>
                 <input
                   type="text"
                   value={formatDate(admin.createdAt)}
                   disabled
-                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-400 cursor-not-allowed"
+                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700 rounded-lg text-slate-500 cursor-not-allowed"
                 />
               </div>
             </div>
-
             <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={saving}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
@@ -213,54 +196,47 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
         </div>
       )}
 
-      {/* Security Tab */}
+      {/* ── Security Tab ─────────────────────────────── */}
       {activeTab === 'security' && (
         <div className="space-y-6">
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
             <h2 className="text-xl font-semibold text-white mb-6">Change Password</h2>
-            
             <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Current Password
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Current Password</label>
                 <input
                   type="password"
                   value={currentPassword}
                   onChange={(e) => setCurrentPassword(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  New Password
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">New Password</label>
                 <input
                   type="password"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
                   minLength={6}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Confirm New Password
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-2">Confirm New Password</label>
                 <input
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   required
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <button
                 type="submit"
                 disabled={saving}
-                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50"
+                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
               >
                 {saving ? 'Changing...' : 'Change Password'}
               </button>
@@ -268,11 +244,11 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
           </div>
 
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-            <h2 className="text-xl font-semibold text-white mb-4">Session</h2>
-            <p className="text-slate-400 mb-4">Last login: {formatDate(admin.lastLogin)}</p>
+            <h2 className="text-xl font-semibold text-white mb-2">Session</h2>
+            <p className="text-slate-400 text-sm mb-4">Last login: {formatDate(admin.lastLogin)}</p>
             <button
               onClick={() => signOut({ callbackUrl: '/admin-login' })}
-              className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+              className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
             >
               Sign Out
             </button>
@@ -280,55 +256,39 @@ export default function AdminSettingsClient({ admin, stats }: AdminSettingsClien
         </div>
       )}
 
-      {/* System Info Tab */}
+      {/* ── System Info Tab ──────────────────────────── */}
       {activeTab === 'system' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-              <p className="text-slate-400 text-sm">Total Users</p>
-              <p className="text-3xl font-bold text-white mt-2">{stats.totalUsers}</p>
-            </div>
-            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-              <p className="text-slate-400 text-sm">Active Sheets</p>
-              <p className="text-3xl font-bold text-white mt-2">{stats.totalSheets}</p>
-            </div>
-            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-              <p className="text-slate-400 text-sm">Subscription Tiers</p>
-              <p className="text-3xl font-bold text-white mt-2">{stats.totalTiers}</p>
-            </div>
-            <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
-              <p className="text-slate-400 text-sm">Templates</p>
-              <p className="text-3xl font-bold text-white mt-2">{stats.totalTemplates}</p>
-            </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Users', value: stats.totalUsers },
+              { label: 'Active Sheets', value: stats.totalSheets },
+              { label: 'Subscription Tiers', value: stats.totalTiers },
+              { label: 'Templates', value: stats.totalTemplates },
+            ].map((stat) => (
+              <div key={stat.label} className="bg-slate-800 rounded-xl border border-slate-700 p-5">
+                <p className="text-slate-400 text-sm">{stat.label}</p>
+                <p className="text-3xl font-bold text-white mt-2">{stat.value}</p>
+              </div>
+            ))}
           </div>
 
           <div className="bg-slate-800 rounded-xl border border-slate-700 p-6">
             <h2 className="text-xl font-semibold text-white mb-4">System Information</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Application</span>
-                <span className="text-white">SheetCon v1.0.0</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Framework</span>
-                <span className="text-white">Next.js 16</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Database</span>
-                <span className="text-white">PostgreSQL (Neon)</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Authentication</span>
-                <span className="text-white">NextAuth.js v4</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Storage</span>
-                <span className="text-white">Google Sheets API</span>
-              </div>
-              <div className="flex justify-between py-2 border-b border-slate-700">
-                <span className="text-slate-400">Environment</span>
-                <span className="text-white">{process.env.NODE_ENV || 'development'}</span>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+              {[
+                { label: 'Application', value: 'SheetCon v1.0.0' },
+                { label: 'Framework', value: 'Next.js 16' },
+                { label: 'Database', value: 'PostgreSQL (Neon)' },
+                { label: 'Authentication', value: 'NextAuth.js v4' },
+                { label: 'Storage', value: 'Google Sheets API' },
+                { label: 'Environment', value: process.env.NODE_ENV || 'development' },
+              ].map((row) => (
+                <div key={row.label} className="flex justify-between py-2.5 border-b border-slate-700 text-sm">
+                  <span className="text-slate-400">{row.label}</span>
+                  <span className="text-white font-medium">{row.value}</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
