@@ -310,7 +310,7 @@ function getTierColor(slug: string): string {
 
 function processUserGrowthData(rawData: any[], startDate: Date): any[] {
   // Create array of last 30 days
-  const data = [];
+  const data: { date: string; count: number }[] = [];
   for (let i = 29; i >= 0; i--) {
     const date = subDays(new Date(), i);
     const dateStr = format(date, 'yyyy-MM-dd');
