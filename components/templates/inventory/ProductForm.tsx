@@ -4,15 +4,16 @@
 
 import { useState, useEffect } from 'react';
 import { Product } from './InventoryApp';
+import LoadingButton from '@/components/ui/LoadingButton';
 
 interface ProductFormProps {
   product?: Product | null;
-  onSubmit: (data: any) => void;
+  onSubmit: (data: any) => Promise<void>;
   onCancel: () => void;
   loading?: boolean;
 }
 
-export default function ProductForm({ product, onSubmit, onCancel, loading }: ProductFormProps) {
+export default function ProductForm({ product, onSubmit, onCancel, loading: externalLoading }: ProductFormProps) {
   const [formData, setFormData] = useState({
     name: '',
     sku: '',
@@ -24,6 +25,9 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
     minStock: '5',
     unit: 'pcs',
   });
+  
+  const [internalLoading, setInternalLoading] = useState(false);
+  const isLoading = externalLoading || internalLoading;
 
   useEffect(() => {
     if (product) {
@@ -41,25 +45,34 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
     }
   }, [product]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent double-submit
+    if (isLoading) return;
     
     if (!formData.name || !formData.sellingPrice) {
       alert('Name and selling price are required');
       return;
     }
 
-    onSubmit({
-      name: formData.name,
-      sku: formData.sku,
-      category: formData.category,
-      description: formData.description,
-      costPrice: parseFloat(formData.costPrice) || 0,
-      sellingPrice: parseFloat(formData.sellingPrice) || 0,
-      stock: parseInt(formData.stock) || 0,
-      minStock: parseInt(formData.minStock) || 5,
-      unit: formData.unit,
-    });
+    setInternalLoading(true);
+    
+    try {
+      await onSubmit({
+        name: formData.name,
+        sku: formData.sku,
+        category: formData.category,
+        description: formData.description,
+        costPrice: parseFloat(formData.costPrice) || 0,
+        sellingPrice: parseFloat(formData.sellingPrice) || 0,
+        stock: parseInt(formData.stock) || 0,
+        minStock: parseInt(formData.minStock) || 5,
+        unit: formData.unit,
+      });
+    } finally {
+      setInternalLoading(false);
+    }
   };
 
   return (
@@ -73,7 +86,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             type="text"
             value={formData.name}
             onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="Enter product name"
             required
           />
@@ -87,7 +101,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             type="text"
             value={formData.sku}
             onChange={(e) => setFormData({ ...formData, sku: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="e.g., PRD-001"
           />
         </div>
@@ -100,7 +115,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             type="text"
             value={formData.category}
             onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="e.g., Electronics"
           />
         </div>
@@ -112,7 +128,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
           <textarea
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="Product description..."
             rows={2}
           />
@@ -120,7 +137,7 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Cost Price (NPR )
+            Cost Price (₹)
           </label>
           <input
             type="number"
@@ -128,14 +145,15 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             min="0"
             value={formData.costPrice}
             onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="0.00"
           />
         </div>
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">
-            Selling Price (NPR ) *
+            Selling Price (₹) *
           </label>
           <input
             type="number"
@@ -143,7 +161,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             min="0"
             value={formData.sellingPrice}
             onChange={(e) => setFormData({ ...formData, sellingPrice: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="0.00"
             required
           />
@@ -158,7 +177,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             min="0"
             value={formData.stock}
             onChange={(e) => setFormData({ ...formData, stock: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="0"
           />
         </div>
@@ -172,7 +192,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
             min="0"
             value={formData.minStock}
             onChange={(e) => setFormData({ ...formData, minStock: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
             placeholder="5"
           />
         </div>
@@ -184,7 +205,8 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
           <select
             value={formData.unit}
             onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
-            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:cursor-not-allowed"
           >
             <option value="pcs">Pieces (pcs)</option>
             <option value="kg">Kilograms (kg)</option>
@@ -202,24 +224,20 @@ export default function ProductForm({ product, onSubmit, onCancel, loading }: Pr
         <button
           type="button"
           onClick={onCancel}
-          disabled={loading}
-          className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+          disabled={isLoading}
+          className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           Cancel
         </button>
-        <button
+        <LoadingButton
           type="submit"
-          disabled={loading}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          loading={isLoading}
+          loadingText={product ? 'Saving...' : 'Adding...'}
+          variant="primary"
+          className="flex-1"
         >
-          {loading && (
-            <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          )}
           {product ? 'Update Product' : 'Add Product'}
-        </button>
+        </LoadingButton>
       </div>
     </form>
   );

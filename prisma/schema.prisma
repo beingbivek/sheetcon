@@ -18,6 +18,10 @@ model Admin {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  // Relations
+  approvedPayments PaymentRequest[] @relation("ApprovedBy")
+  rejectedPayments PaymentRequest[] @relation("RejectedBy")
+
   @@index([email])
 }
 
@@ -27,7 +31,12 @@ model Tier {
   slug             String   @unique
   description      String?
   price            Float    @default(0)
-  currency         String   @default("INR")
+  currency         String   @default("NPR")
+  
+  // Billing options
+  billingCycle     BillingCycle @default(MONTHLY)
+  annualPrice      Float?   // Optional annual pricing
+  
   maxUsers         Int      @default(-1)
   currentUserCount Int      @default(0)
   maxSheets        Int      @default(1)
@@ -40,7 +49,9 @@ model Tier {
   displayOrder     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
+  
   users            User[]
+  paymentRequests  PaymentRequest[]
 
   @@index([slug])
 }
@@ -59,16 +70,24 @@ model User {
   emailVerified    Boolean           @default(false)
   crudCountToday   Int               @default(0)
   lastCrudReset    DateTime          @default(now())
+  
+  // Subscription fields
+  subscriptionExpiresAt DateTime?
+  subscriptionStatus    SubscriptionStatus @default(ACTIVE)
+  
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
   banReason        String?
   isBanned         Boolean           @default(false)
   lastLoginAt      DateTime?
+  
   sheetConnections SheetConnection[]
   tier             Tier              @relation(fields: [tierId], references: [id])
+  paymentRequests  PaymentRequest[]
 
   @@index([email])
   @@index([tierId])
+  @@index([subscriptionStatus, subscriptionExpiresAt])
 }
 
 model SheetConnection {
@@ -113,8 +132,120 @@ model Template {
   @@index([isActive, isPublic])
 }
 
+model PaymentRequest {
+  id                  String              @id @default(cuid())
+  invoiceId           String              @unique
+  
+  // User & Tier info
+  userId              String
+  requestedTierId     String
+  requestedBillingCycle BillingCycle
+  
+  // Snapshots (for audit trail)
+  requestedTierName   String
+  amountSnapshot      Float
+  currency            String              @default("NPR")
+  
+  // Payment method
+  paymentMethod       PaymentMethod       @default(ESEWA_QR)
+  
+  // Status tracking
+  status              PaymentStatus       @default(AWAITING_PAYMENT)
+  
+  // User-submitted proof
+  screenshotUrl       String?
+  transactionReference String?
+  payerAccount        String?             // eSewa number/name
+  userNote            String?
+  submittedAt         DateTime?
+  
+  // Admin review
+  adminNote           String?
+  rejectionReason     String?
+  approvedByAdminId   String?
+  rejectedByAdminId   String?
+  approvedAt          DateTime?
+  rejectedAt          DateTime?
+  
+  // Expiry
+  expiresAt           DateTime
+  
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  
+  // Relations
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  requestedTier       Tier                @relation(fields: [requestedTierId], references: [id])
+  approvedBy          Admin?              @relation("ApprovedBy", fields: [approvedByAdminId], references: [id])
+  rejectedBy          Admin?              @relation("RejectedBy", fields: [rejectedByAdminId], references: [id])
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([invoiceId])
+}
+
+model PaymentSettings {
+  id              String   @id @default(cuid())
+  esewaId         String   // eSewa ID
+  esewaName       String   // Account holder name
+  esewaPhone      String?  // Phone number
+  qrCodeData      String   // JSON string for QR generation
+  qrImageUrl      String?  // Cloudinary URL (if pre-generated)
+  instructions    String   @default("1. Scan QR or send to eSewa ID\n2. Enter exact amount\n3. Copy Invoice ID to remarks\n4. Upload payment screenshot")
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([isActive])
+}
+
+// ADD this new model to prisma/schema.prisma
+// (keep all existing models unchanged)
+
+model QrImage {
+  id          String   @id @default(cuid())
+  label       String   // Admin-given name e.g. "eSewa Main", "Bank QR"
+  imageUrl    String   // Cloudinary URL
+  isActive    Boolean  @default(false)
+  uploadedAt  DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ═══════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════
+
 enum AdminRole {
   SUPER_ADMIN
   ADMIN
   SUPPORT
+}
+
+enum BillingCycle {
+  MONTHLY
+  ANNUAL
+  LIFETIME
+}
+
+enum PaymentMethod {
+  ESEWA_QR
+  KHALTI
+  BANK_TRANSFER
+  MANUAL
+}
+
+enum PaymentStatus {
+  AWAITING_PAYMENT
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  PENDING
 }

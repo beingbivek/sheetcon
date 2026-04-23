@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import LoadingButton from '@/components/ui/LoadingButton';
 
 interface TemplateFormProps {
   template?: {
@@ -56,6 +57,10 @@ export default function TemplateForm({ template }: TemplateFormProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Prevent double-submit
+    if (isLoading) return;
+    
     setError('');
     setIsLoading(true);
 
@@ -128,7 +133,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
         <button
           type="button"
           onClick={() => setActiveTab('basic')}
-          className={`pb-3 px-2 border-b-2 transition-colors ${
+          disabled={isLoading}
+          className={`pb-3 px-2 border-b-2 transition-colors disabled:opacity-50 ${
             activeTab === 'basic'
               ? 'border-blue-500 text-blue-400'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -139,7 +145,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
         <button
           type="button"
           onClick={() => setActiveTab('features')}
-          className={`pb-3 px-2 border-b-2 transition-colors ${
+          disabled={isLoading}
+          className={`pb-3 px-2 border-b-2 transition-colors disabled:opacity-50 ${
             activeTab === 'features'
               ? 'border-blue-500 text-blue-400'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -150,7 +157,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
         <button
           type="button"
           onClick={() => setActiveTab('schema')}
-          className={`pb-3 px-2 border-b-2 transition-colors ${
+          disabled={isLoading}
+          className={`pb-3 px-2 border-b-2 transition-colors disabled:opacity-50 ${
             activeTab === 'schema'
               ? 'border-blue-500 text-blue-400'
               : 'border-transparent text-slate-400 hover:text-white'
@@ -173,7 +181,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                 value={formData.name}
                 onChange={handleNameChange}
                 required
-                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="e.g., Personal Finance Tracker"
               />
             </div>
@@ -187,8 +196,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                 value={formData.slug}
                 onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
                 required
-                disabled={!!template}
-                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                disabled={!!template || isLoading}
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="e.g., finance"
               />
               {template && (
@@ -205,7 +214,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
-              className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+              className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
               placeholder="Brief description of what this template does"
             />
           </div>
@@ -221,7 +231,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                     key={icon}
                     type="button"
                     onClick={() => setFormData({ ...formData, icon })}
-                    className={`w-10 h-10 text-xl rounded-lg border ${
+                    disabled={isLoading}
+                    className={`w-10 h-10 text-xl rounded-lg border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                       formData.icon === icon
                         ? 'border-blue-500 bg-blue-500/20'
                         : 'border-slate-600 hover:border-slate-500'
@@ -242,13 +253,15 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                   type="color"
                   value={formData.primaryColor}
                   onChange={(e) => setFormData({ ...formData, primaryColor: e.target.value })}
-                  className="w-10 h-10 rounded cursor-pointer"
+                  disabled={isLoading}
+                  className="w-10 h-10 rounded cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 />
                 <input
                   type="text"
                   value={formData.primaryColor}
                   onChange={(e) => setFormData({ ...formData, primaryColor: e.target.value })}
-                  className="flex-1 px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={isLoading}
+                  className="flex-1 px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white font-mono focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             </div>
@@ -261,29 +274,32 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                 type="text"
                 value={formData.version}
                 onChange={(e) => setFormData({ ...formData, version: e.target.value })}
-                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={isLoading}
+                className="w-full px-4 py-2 bg-slate-900 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 placeholder="1.0.0"
               />
             </div>
           </div>
 
           <div className="flex gap-6">
-            <label className="flex items-center">
+            <label className="flex items-center cursor-pointer">
               <input
                 type="checkbox"
                 checked={formData.isActive}
                 onChange={(e) => setFormData({ ...formData, isActive: e.target.checked })}
-                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-600 rounded"
+                disabled={isLoading}
+                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="ml-3 text-slate-300">Active</span>
             </label>
 
-            <label className="flex items-center">
+            <label className="flex items-center cursor-pointer">
               <input
                 type="checkbox"
                 checked={formData.isPublic}
                 onChange={(e) => setFormData({ ...formData, isPublic: e.target.checked })}
-                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-600 rounded"
+                disabled={isLoading}
+                className="w-4 h-4 text-blue-600 bg-slate-900 border-slate-600 rounded disabled:opacity-50 disabled:cursor-not-allowed"
               />
               <span className="ml-3 text-slate-300">Public (visible to users)</span>
             </label>
@@ -301,7 +317,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
                 key={feature}
                 type="button"
                 onClick={() => toggleFeature(feature)}
-                className={`p-4 rounded-lg border text-left transition-colors ${
+                disabled={isLoading}
+                className={`p-4 rounded-lg border text-left transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                   formData.features.includes(feature)
                     ? 'border-blue-500 bg-blue-500/10 text-white'
                     : 'border-slate-600 text-slate-400 hover:border-slate-500'
@@ -324,7 +341,8 @@ export default function TemplateForm({ template }: TemplateFormProps) {
             value={formData.configSchema}
             onChange={(e) => setFormData({ ...formData, configSchema: e.target.value })}
             rows={25}
-            className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isLoading}
+            className="w-full px-4 py-3 bg-slate-900 border border-slate-600 rounded-lg text-white font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="Enter JSON configuration..."
           />
         </div>
@@ -336,23 +354,18 @@ export default function TemplateForm({ template }: TemplateFormProps) {
           type="button"
           onClick={() => router.back()}
           disabled={isLoading}
-          className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors disabled:opacity-50"
+          className="px-6 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Cancel
         </button>
-        <button
+        <LoadingButton
           type="submit"
-          disabled={isLoading}
-          className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+          loading={isLoading}
+          loadingText={template ? 'Updating...' : 'Creating...'}
+          variant="primary"
         >
-          {isLoading && (
-            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-          )}
           {template ? 'Update Template' : 'Create Template'}
-        </button>
+        </LoadingButton>
       </div>
     </form>
   );

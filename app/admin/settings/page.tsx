@@ -5,47 +5,55 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/db';
 import { redirect } from 'next/navigation';
 import AdminSettingsClient from './AdminSettingsClient';
+import PaymentSettingsForm from '@/components/admin/PaymentSettingsForm';
 
 export default async function AdminSettingsPage() {
   const session = await getServerSession(authOptions);
+  if (!session) redirect('/admin-login');
 
-  if (!session || (session.user as any).type !== 'admin') {
-    redirect('/admin-login');
-  }
-
-  // Get admin details
+  // Fetch the actual admin record from DB
+  const adminUser = session.user as any;
   const admin = await prisma.admin.findUnique({
-    where: { email: session.user.email! },
+    where: { email: adminUser.email },
+    select: {
+      id: true,
+      email: true,
+      name: true,
+      role: true,
+      lastLogin: true,
+      createdAt: true,
+    },
   });
 
-  if (!admin) {
-    redirect('/admin-login');
-  }
+  if (!admin) redirect('/admin-login');
 
-  // Get system stats
+  // Fetch system stats
   const [totalUsers, totalSheets, totalTiers, totalTemplates] = await Promise.all([
-    prisma.user.count(),
-    prisma.sheetConnection.count(),
-    prisma.tier.count(),
-    prisma.template.count(),
+    prisma.user.count({ where: { isActive: true } }),
+    prisma.sheetConnection.count({ where: { isActive: true } }),
+    prisma.tier.count({ where: { isActive: true } }),
+    prisma.template.count({ where: { isActive: true } }),
   ]);
 
   return (
-    <AdminSettingsClient
-      admin={{
-        id: admin.id,
-        email: admin.email,
-        name: admin.name,
-        role: admin.role,
-        lastLogin: admin.lastLogin?.toISOString() || null,
-        createdAt: admin.createdAt.toISOString(),
-      }}
-      stats={{
-        totalUsers,
-        totalSheets,
-        totalTiers,
-        totalTemplates,
-      }}
-    />
+    <div className="max-w-4xl mx-auto space-y-8">
+      <AdminSettingsClient
+        admin={{
+          id: admin.id,
+          email: admin.email,
+          name: admin.name,
+          role: admin.role,
+          lastLogin: admin.lastLogin ? admin.lastLogin.toISOString() : null,
+          createdAt: admin.createdAt.toISOString(),
+        }}
+        stats={{
+          totalUsers,
+          totalSheets,
+          totalTiers,
+          totalTemplates,
+        }}
+      />
+      <PaymentSettingsForm />
+    </div>
   );
 }
