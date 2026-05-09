@@ -92,8 +92,9 @@ const DATE_FIELDS = new Set([
 // HELPERS
 // ═══════════════════════════════════════════════════
 
-function makeSheetClient(userId: string) {
-  const auth = getOAuth2Client(userId);
+// ── async: must await getOAuth2Client ──────────────
+async function makeSheetClient(userId: string) {
+  const auth = await getOAuth2Client(userId);
   return google.sheets({ version: 'v4', auth });
 }
 
@@ -150,11 +151,27 @@ function generateId(prefix: string, existing: Record<string, any>[]): string {
   return `${prefix}_${max + 1}`;
 }
 
-function generateInvoiceNumber(prefix: string, existing: Record<string, any>[]): string {
+function generateInvoiceNumber(
+  prefix: string,
+  existing: Record<string, any>[]
+): string {
   const date = new Date();
   const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
   const count = existing.length + 1;
   return `${prefix}-${ymd}-${String(count).padStart(4, '0')}`;
+}
+
+function padValues(
+  values: string[][],
+  colCount: number,
+  originalLength: number
+): string[][] {
+  const emptyRow = Array<string>(colCount).fill('');
+  const result = [...values];
+  while (result.length < originalLength) {
+    result.push(emptyRow);
+  }
+  return result;
 }
 
 // ═══════════════════════════════════════════════════
@@ -166,7 +183,8 @@ export async function createBusinessManagementSpreadsheet(
   title: string
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
 
     const created = await sheets.spreadsheets.create({
       requestBody: {
@@ -192,7 +210,6 @@ export async function createBusinessManagementSpreadsheet(
       return found?.properties?.sheetId ?? 0;
     };
 
-    // Write all headers
     const headerEntries: { tab: string; headers: readonly string[] }[] = [
       { tab: TABS.CONFIG, headers: HEADERS.CONFIG },
       { tab: TABS.SUPPLIERS, headers: HEADERS.SUPPLIERS },
@@ -215,7 +232,6 @@ export async function createBusinessManagementSpreadsheet(
       },
     });
 
-    // Format header rows
     const formatRequests = headerEntries.map(({ tab, headers }) => ({
       repeatCell: {
         range: {
@@ -240,7 +256,6 @@ export async function createBusinessManagementSpreadsheet(
       },
     }));
 
-    // Freeze header rows
     const freezeRequests = headerEntries.map(({ tab }) => ({
       updateSheetProperties: {
         properties: {
@@ -253,9 +268,7 @@ export async function createBusinessManagementSpreadsheet(
 
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
-      requestBody: {
-        requests: [...formatRequests, ...freezeRequests],
-      },
+      requestBody: { requests: [...formatRequests, ...freezeRequests] },
     });
 
     return {
@@ -270,7 +283,8 @@ export async function initializeExistingBusinessSheet(
   spreadsheetId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
 
     const meta = await sheets.spreadsheets.get({ spreadsheetId });
     const existingTitles = new Set(
@@ -280,7 +294,9 @@ export async function initializeExistingBusinessSheet(
     const addSheetRequests = Object.values(TABS)
       .filter(tab => !existingTitles.has(tab))
       .map((tab, i) => ({
-        addSheet: { properties: { title: tab, index: existingTitles.size + i } },
+        addSheet: {
+          properties: { title: tab, index: existingTitles.size + i },
+        },
       }));
 
     if (addSheetRequests.length > 0) {
@@ -290,7 +306,6 @@ export async function initializeExistingBusinessSheet(
       });
     }
 
-    // Write headers to all tabs (idempotent)
     const headerEntries = [
       { tab: TABS.CONFIG, headers: HEADERS.CONFIG },
       { tab: TABS.SUPPLIERS, headers: HEADERS.SUPPLIERS },
@@ -328,7 +343,8 @@ export async function getConfig(
     cacheKey,
     async () => {
       const data = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
+        // ── await makeSheetClient ──
+        const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: RANGES.CONFIG,
@@ -352,7 +368,8 @@ export async function updateConfig(
   updates: Record<string, string>
 ): Promise<Record<string, string>> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
 
     const existing = await sheets.spreadsheets.values.get({
       spreadsheetId,
@@ -407,7 +424,8 @@ export async function getSuppliers(
     cacheKey,
     async () => {
       const data = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
+        // ── await makeSheetClient ──
+        const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: RANGES.SUPPLIERS,
@@ -426,7 +444,8 @@ export async function createSupplier(
   input: Omit<Supplier, 'id' | 'createdAt'>
 ): Promise<Supplier> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getSuppliers(userId, spreadsheetId);
     const newSupplier: Supplier = {
       id: generateId('SUP', all),
@@ -452,7 +471,8 @@ export async function updateSupplier(
   updates: Partial<Omit<Supplier, 'id' | 'createdAt'>>
 ): Promise<Supplier> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getSuppliers(userId, spreadsheetId);
     const idx = all.findIndex(s => s.id === supplierId);
     if (idx === -1) throw new Error('Supplier not found');
@@ -475,7 +495,8 @@ export async function deleteSupplier(
   supplierId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getSuppliers(userId, spreadsheetId);
     const filtered = all.filter(s => s.id !== supplierId);
     if (filtered.length === all.length) throw new Error('Supplier not found');
@@ -522,7 +543,8 @@ export async function getProducts(
     cacheKey,
     async () => {
       const data = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
+        // ── await makeSheetClient ──
+        const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: RANGES.PRODUCTS,
@@ -541,7 +563,8 @@ export async function createProduct(
   input: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Product> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getProducts(userId, spreadsheetId);
     const now = new Date().toISOString();
     const newProduct: Product = {
@@ -569,7 +592,8 @@ export async function updateProduct(
   updates: Partial<Omit<Product, 'id' | 'createdAt'>>
 ): Promise<Product> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getProducts(userId, spreadsheetId);
     const idx = all.findIndex(p => p.id === productId);
     if (idx === -1) throw new Error('Product not found');
@@ -592,7 +616,8 @@ export async function deleteProduct(
   productId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getProducts(userId, spreadsheetId);
     const filtered = all.filter(p => p.id !== productId);
     if (filtered.length === all.length) throw new Error('Product not found');
@@ -608,19 +633,23 @@ export async function deleteProduct(
   });
 }
 
-// Internal: deduct stock without re-queuing (called inside an existing queueWriteRequest)
+// ─── Internal: deduct stock (called inside queueWriteRequest) ─────────────────
+
 async function _rawDeductStock(
-  sheets: ReturnType<typeof makeSheetClient>,
-  spreadsheetId: string,
   userId: string,
+  spreadsheetId: string,
   items: Array<{ productId: string; quantity: number }>
 ): Promise<void> {
+  // ── await makeSheetClient ──
+  const sheets = await makeSheetClient(userId);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: RANGES.PRODUCTS,
   });
-  const data = res.data.values as string[][] | null;
-  const all = sheetRowsToObjects(data, HEADERS.PRODUCTS) as Product[];
+  const all = sheetRowsToObjects(
+    res.data.values as string[][] | null,
+    HEADERS.PRODUCTS
+  ) as Product[];
 
   for (const item of items) {
     const idx = all.findIndex(p => p.id === item.productId);
@@ -643,16 +672,20 @@ async function _rawDeductStock(
 }
 
 async function _rawRestoreStock(
-  sheets: ReturnType<typeof makeSheetClient>,
+  userId: string,
   spreadsheetId: string,
   items: Array<{ productId: string; quantity: number }>
 ): Promise<void> {
+  // ── await makeSheetClient ──
+  const sheets = await makeSheetClient(userId);
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
     range: RANGES.PRODUCTS,
   });
-  const data = res.data.values as string[][] | null;
-  const all = sheetRowsToObjects(data, HEADERS.PRODUCTS) as Product[];
+  const all = sheetRowsToObjects(
+    res.data.values as string[][] | null,
+    HEADERS.PRODUCTS
+  ) as Product[];
 
   for (const item of items) {
     const idx = all.findIndex(p => p.id === item.productId);
@@ -699,7 +732,8 @@ export async function getCustomers(
     cacheKey,
     async () => {
       const data = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
+        // ── await makeSheetClient ──
+        const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
           range: RANGES.CUSTOMERS,
@@ -718,7 +752,8 @@ export async function createCustomer(
   input: Omit<Customer, 'id' | 'createdAt'>
 ): Promise<Customer> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getCustomers(userId, spreadsheetId);
     const newCustomer: Customer = {
       id: generateId('CUST', all),
@@ -744,7 +779,8 @@ export async function updateCustomer(
   updates: Partial<Omit<Customer, 'id' | 'createdAt'>>
 ): Promise<Customer> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getCustomers(userId, spreadsheetId);
     const idx = all.findIndex(c => c.id === customerId);
     if (idx === -1) throw new Error('Customer not found');
@@ -767,7 +803,8 @@ export async function deleteCustomer(
   customerId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getCustomers(userId, spreadsheetId);
     const filtered = all.filter(c => c.id !== customerId);
     if (filtered.length === all.length) throw new Error('Customer not found');
@@ -825,21 +862,44 @@ export async function getPurchases(
   userId: string,
   spreadsheetId: string
 ): Promise<Purchase[]> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'biz-purchases');
+  const cacheKey = getCacheKey(
+    CACHE_PREFIX.TRANSACTIONS,
+    spreadsheetId,
+    'biz-purchases'
+  );
   return getOrFetch(
     cacheKey,
     async () => {
-      const [purchaseData, itemData] = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
-        const [pRes, iRes] = await Promise.all([
-          sheets.spreadsheets.values.get({ spreadsheetId, range: RANGES.PURCHASES }),
-          sheets.spreadsheets.values.get({ spreadsheetId, range: RANGES.PURCHASE_ITEMS }),
-        ]);
-        return [pRes.data.values as string[][], iRes.data.values as string[][]];
-      });
+      const [purchaseData, itemData] = await queueReadRequest(
+        userId,
+        async () => {
+          // ── await makeSheetClient ──
+          const sheets = await makeSheetClient(userId);
+          const [pRes, iRes] = await Promise.all([
+            sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: RANGES.PURCHASES,
+            }),
+            sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: RANGES.PURCHASE_ITEMS,
+            }),
+          ]);
+          return [
+            pRes.data.values as string[][],
+            iRes.data.values as string[][],
+          ];
+        }
+      );
 
-      const purchases = sheetRowsToObjects(purchaseData, HEADERS.PURCHASES) as Purchase[];
-      const items = sheetRowsToObjects(itemData, HEADERS.PURCHASE_ITEMS) as PurchaseItem[];
+      const purchases = sheetRowsToObjects(
+        purchaseData,
+        HEADERS.PURCHASES
+      ) as Purchase[];
+      const items = sheetRowsToObjects(
+        itemData,
+        HEADERS.PURCHASE_ITEMS
+      ) as PurchaseItem[];
 
       return purchases.map(p => ({
         ...p,
@@ -858,7 +918,8 @@ export async function createPurchase(
   }
 ): Promise<Purchase> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const allPurchases = await getPurchases(userId, spreadsheetId);
 
     const newPurchase: Purchase = {
@@ -883,7 +944,10 @@ export async function createPurchase(
         purchaseId: newPurchase.id,
         ...item,
       }));
-      const itemValues = objectsToSheetRows(purchaseItems, HEADERS.PURCHASE_ITEMS);
+      const itemValues = objectsToSheetRows(
+        purchaseItems,
+        HEADERS.PURCHASE_ITEMS
+      );
       await sheets.spreadsheets.values.append({
         spreadsheetId,
         range: `${TABS.PURCHASE_ITEMS}!A:G`,
@@ -891,8 +955,7 @@ export async function createPurchase(
         requestBody: { values: itemValues },
       });
 
-      // Add stock from purchase
-      await _rawRestoreStock(sheets, spreadsheetId, purchaseItems);
+      await _rawRestoreStock(userId, spreadsheetId, purchaseItems);
       newPurchase.items = purchaseItems;
     }
 
@@ -909,7 +972,8 @@ export async function updatePurchaseStatus(
   amountPaid: number
 ): Promise<Purchase> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getPurchases(userId, spreadsheetId);
     const idx = all.findIndex(p => p.id === purchaseId);
     if (idx === -1) throw new Error('Purchase not found');
@@ -938,14 +1002,19 @@ export async function deletePurchase(
   purchaseId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const all = await getPurchases(userId, spreadsheetId);
     const purchase = all.find(p => p.id === purchaseId);
     if (!purchase) throw new Error('Purchase not found');
 
     const filtered = all.filter(p => p.id !== purchaseId);
     const purchaseValues = objectsToSheetRows(filtered, HEADERS.PURCHASES);
-    const padded = padValues(purchaseValues, HEADERS.PURCHASES.length, all.length);
+    const padded = padValues(
+      purchaseValues,
+      HEADERS.PURCHASES.length,
+      all.length
+    );
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: `${TABS.PURCHASES}!A2:T`,
@@ -953,7 +1022,6 @@ export async function deletePurchase(
       requestBody: { values: padded },
     });
 
-    // Remove purchase items and reverse stock
     const iRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: RANGES.PURCHASE_ITEMS,
@@ -966,9 +1034,16 @@ export async function deletePurchase(
     const remainingItems = allItems.filter(i => i.purchaseId !== purchaseId);
 
     if (toRemove.length > 0) {
-      await _rawDeductStock(sheets, spreadsheetId, '', toRemove);
-      const itemValues = objectsToSheetRows(remainingItems, HEADERS.PURCHASE_ITEMS);
-      const paddedItems = padValues(itemValues, HEADERS.PURCHASE_ITEMS.length, allItems.length);
+      await _rawDeductStock(userId, spreadsheetId, toRemove);
+      const itemValues = objectsToSheetRows(
+        remainingItems,
+        HEADERS.PURCHASE_ITEMS
+      );
+      const paddedItems = padValues(
+        itemValues,
+        HEADERS.PURCHASE_ITEMS.length,
+        allItems.length
+      );
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${TABS.PURCHASE_ITEMS}!A2:G`,
@@ -1026,17 +1101,33 @@ export async function getSales(
   return getOrFetch(
     cacheKey,
     async () => {
-      const [saleData, itemData] = await queueReadRequest(userId, async () => {
-        const sheets = makeSheetClient(userId);
-        const [sRes, iRes] = await Promise.all([
-          sheets.spreadsheets.values.get({ spreadsheetId, range: RANGES.SALES }),
-          sheets.spreadsheets.values.get({ spreadsheetId, range: RANGES.SALE_ITEMS }),
-        ]);
-        return [sRes.data.values as string[][], iRes.data.values as string[][]];
-      });
+      const [saleData, itemData] = await queueReadRequest(
+        userId,
+        async () => {
+          // ── await makeSheetClient ──
+          const sheets = await makeSheetClient(userId);
+          const [sRes, iRes] = await Promise.all([
+            sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: RANGES.SALES,
+            }),
+            sheets.spreadsheets.values.get({
+              spreadsheetId,
+              range: RANGES.SALE_ITEMS,
+            }),
+          ]);
+          return [
+            sRes.data.values as string[][],
+            iRes.data.values as string[][],
+          ];
+        }
+      );
 
       const sales = sheetRowsToObjects(saleData, HEADERS.SALES) as Sale[];
-      const items = sheetRowsToObjects(itemData, HEADERS.SALE_ITEMS) as SaleItem[];
+      const items = sheetRowsToObjects(
+        itemData,
+        HEADERS.SALE_ITEMS
+      ) as SaleItem[];
 
       return sales.map(s => ({
         ...s,
@@ -1055,7 +1146,8 @@ export async function createSale(
   }
 ): Promise<Sale> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const allSales = await getSales(userId, spreadsheetId);
 
     const newSale: Sale = {
@@ -1088,8 +1180,7 @@ export async function createSale(
         requestBody: { values: itemValues },
       });
 
-      // Deduct stock atomically
-      await _rawDeductStock(sheets, spreadsheetId, userId, saleItems);
+      await _rawDeductStock(userId, spreadsheetId, saleItems);
       newSale.items = saleItems;
     }
 
@@ -1104,7 +1195,8 @@ export async function deleteSale(
   saleId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    const sheets = makeSheetClient(userId);
+    // ── await makeSheetClient ──
+    const sheets = await makeSheetClient(userId);
     const allSales = await getSales(userId, spreadsheetId);
     const sale = allSales.find(s => s.id === saleId);
     if (!sale) throw new Error('Sale not found');
@@ -1119,7 +1211,6 @@ export async function deleteSale(
       requestBody: { values: padded },
     });
 
-    // Remove sale items and restore stock
     const iRes = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: RANGES.SALE_ITEMS,
@@ -1132,9 +1223,16 @@ export async function deleteSale(
     const remainingItems = allItems.filter(i => i.saleId !== saleId);
 
     if (toRestore.length > 0) {
-      await _rawRestoreStock(sheets, spreadsheetId, toRestore);
-      const itemValues = objectsToSheetRows(remainingItems, HEADERS.SALE_ITEMS);
-      const paddedItems = padValues(itemValues, HEADERS.SALE_ITEMS.length, allItems.length);
+      await _rawRestoreStock(userId, spreadsheetId, toRestore);
+      const itemValues = objectsToSheetRows(
+        remainingItems,
+        HEADERS.SALE_ITEMS
+      );
+      const paddedItems = padValues(
+        itemValues,
+        HEADERS.SALE_ITEMS.length,
+        allItems.length
+      );
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${TABS.SALE_ITEMS}!A2:H`,
@@ -1203,10 +1301,12 @@ export async function getBusinessReport(
   const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
   const totalCost = purchases.reduce((sum, p) => sum + p.total, 0);
   const grossProfit = totalRevenue - totalCost;
-  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
-  const lowStockProducts = products.filter(p => p.stock <= p.minStock && p.minStock > 0);
+  const grossMargin =
+    totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+  const lowStockProducts = products.filter(
+    p => p.stock <= p.minStock && p.minStock > 0
+  );
 
-  // Sales by date (last 30 days)
   const salesByDateMap = new Map<string, { revenue: number; orders: number }>();
   sales.forEach(s => {
     const date = new Date(s.date).toISOString().split('T')[0];
@@ -1221,8 +1321,10 @@ export async function getBusinessReport(
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(-30);
 
-  // Top products by qty sold
-  const productMap = new Map<string, { productName: string; totalQty: number; totalRevenue: number }>();
+  const productMap = new Map<
+    string,
+    { productName: string; totalQty: number; totalRevenue: number }
+  >();
   sales.forEach(s => {
     (s.items ?? []).forEach(item => {
       const existing = productMap.get(item.productId) ?? {
@@ -1242,8 +1344,10 @@ export async function getBusinessReport(
     .sort((a, b) => b.totalQty - a.totalQty)
     .slice(0, 10);
 
-  // Customer summary
-  const custMap = new Map<string, { customerName: string; totalOrders: number; totalSpent: number }>();
+  const custMap = new Map<
+    string,
+    { customerName: string; totalOrders: number; totalSpent: number }
+  >();
   sales.forEach(s => {
     if (!s.customerId) return;
     const existing = custMap.get(s.customerId) ?? {
@@ -1261,8 +1365,10 @@ export async function getBusinessReport(
     .map(([customerId, v]) => ({ customerId, ...v }))
     .sort((a, b) => b.totalSpent - a.totalSpent);
 
-  // Supplier summary
-  const supMap = new Map<string, { supplierName: string; totalPurchases: number; totalSpent: number }>();
+  const supMap = new Map<
+    string,
+    { supplierName: string; totalPurchases: number; totalSpent: number }
+  >();
   purchases.forEach(p => {
     if (!p.supplierId) return;
     const existing = supMap.get(p.supplierId) ?? {
@@ -1297,32 +1403,18 @@ export async function getBusinessReport(
     topProducts,
     lowStockProducts,
     recentSales: sales
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
       .slice(0, 10),
     recentPurchases: purchases
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
       .slice(0, 10),
     customerSummary,
     supplierSummary,
   };
-}
-
-// ═══════════════════════════════════════════════════
-// UTILITY
-// ═══════════════════════════════════════════════════
-
-/**
- * Pad values with empty rows to clear stale data when updating a full range
- */
-function padValues(
-  values: string[][],
-  colCount: number,
-  originalLength: number
-): string[][] {
-  const emptyRow = Array<string>(colCount).fill('');
-  const result = [...values];
-  while (result.length < originalLength) {
-    result.push(emptyRow);
-  }
-  return result;
 }
