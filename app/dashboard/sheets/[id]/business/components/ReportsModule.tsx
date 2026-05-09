@@ -1,4 +1,4 @@
-// app/dashboard/sheets/[id]/business/components/ReportsModule.tsx
+// app/dashboard/sheets/[id]/business/components/ReportsModule.tsx (COMPLETE REPLACEMENT)
 
 'use client';
 
@@ -19,6 +19,21 @@ import {
   Legend,
 } from 'recharts';
 import type { BusinessConfig, Connection } from '../BusinessApp';
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const CHART_COLORS = [
+  '#3b82f6',
+  '#10b981',
+  '#f59e0b',
+  '#ef4444',
+  '#8b5cf6',
+  '#06b6d4',
+  '#f97316',
+  '#84cc16',
+  '#ec4899',
+  '#6366f1',
+];
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -108,21 +123,6 @@ type ReportTab =
   | 'suppliers'
   | 'purchases';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const CHART_COLORS = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#06b6d4',
-  '#f97316',
-  '#84cc16',
-  '#ec4899',
-  '#6366f1',
-];
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ReportsModuleProps {
@@ -136,12 +136,20 @@ interface ReportsModuleProps {
 export default function ReportsModule({
   connection,
   config,
-  fmt,
 }: ReportsModuleProps) {
   const [report, setReport] = useState<BusinessReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTab, setActiveTab] = useState<ReportTab>('overview');
+
+  const fmt = useCallback(
+    (amount: number) =>
+      `${config.currencySymbol} ${amount.toLocaleString('en-IN', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      })}`,
+    [config.currencySymbol]
+  );
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
@@ -206,7 +214,9 @@ export default function ReportsModule({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">Reports & Analytics</h2>
+          <h2 className="text-lg font-bold text-slate-900">
+            Reports & Analytics
+          </h2>
           <p className="text-sm text-slate-500 mt-0.5">
             Business performance overview
           </p>
@@ -215,9 +225,18 @@ export default function ReportsModule({
           onClick={fetchReport}
           className="flex items-center gap-2 px-3 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-50 text-sm font-medium transition-colors"
         >
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          <svg
+            className="w-4 h-4"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+            />
           </svg>
           Refresh
         </button>
@@ -241,32 +260,21 @@ export default function ReportsModule({
         ))}
       </div>
 
-      {/* ════════════════ OVERVIEW ════════════════ */}
       {activeTab === 'overview' && (
         <OverviewTab report={report} fmt={fmt} config={config} />
       )}
-
-      {/* ════════════════ SALES ════════════════ */}
       {activeTab === 'sales' && (
         <SalesTab report={report} fmt={fmt} />
       )}
-
-      {/* ════════════════ INVENTORY ════════════════ */}
       {activeTab === 'inventory' && (
         <InventoryTab report={report} fmt={fmt} config={config} />
       )}
-
-      {/* ════════════════ CUSTOMERS ════════════════ */}
       {activeTab === 'customers' && (
         <CustomersTab report={report} fmt={fmt} />
       )}
-
-      {/* ════════════════ SUPPLIERS ════════════════ */}
       {activeTab === 'suppliers' && (
         <SuppliersTab report={report} fmt={fmt} />
       )}
-
-      {/* ════════════════ PURCHASES ════════════════ */}
       {activeTab === 'purchases' && (
         <PurchasesTab report={report} fmt={fmt} />
       )}
@@ -350,7 +358,6 @@ function OverviewTab({
     },
   ];
 
-  // P&L pie
   const plData =
     ov.grossProfit >= 0
       ? [
@@ -364,7 +371,6 @@ function OverviewTab({
 
   return (
     <div className="space-y-6">
-      {/* KPI Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {kpiCards.map(card => (
           <div key={card.label} className={`border rounded-xl p-4 ${card.bg}`}>
@@ -380,7 +386,6 @@ function OverviewTab({
         ))}
       </div>
 
-      {/* Revenue Trend + P&L Pie */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
@@ -394,8 +399,16 @@ function OverviewTab({
                 <AreaChart data={report.salesByDate}>
                   <defs>
                     <linearGradient id="revGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.15} />
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                      <stop
+                        offset="5%"
+                        stopColor="#3b82f6"
+                        stopOpacity={0.15}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor="#3b82f6"
+                        stopOpacity={0}
+                      />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -505,7 +518,6 @@ function OverviewTab({
         </div>
       </div>
 
-      {/* Top Products quick view */}
       {report.topProducts.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
@@ -518,7 +530,11 @@ function OverviewTab({
                 layout="vertical"
                 margin={{ left: 0, right: 20 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  horizontal={false}
+                />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11, fill: '#94a3b8' }}
@@ -568,7 +584,6 @@ function SalesTab({
 }) {
   return (
     <div className="space-y-6">
-      {/* Revenue + Orders over time */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           Daily Revenue & Orders
@@ -581,12 +596,28 @@ function SalesTab({
               <AreaChart data={report.salesByDate}>
                 <defs>
                   <linearGradient id="revGrad2" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    <stop
+                      offset="5%"
+                      stopColor="#3b82f6"
+                      stopOpacity={0.2}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="#3b82f6"
+                      stopOpacity={0}
+                    />
                   </linearGradient>
                   <linearGradient id="ordGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    <stop
+                      offset="5%"
+                      stopColor="#10b981"
+                      stopOpacity={0.2}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="#10b981"
+                      stopOpacity={0}
+                    />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
@@ -649,7 +680,6 @@ function SalesTab({
         )}
       </div>
 
-      {/* Top products by qty */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
@@ -680,7 +710,10 @@ function SalesTab({
                   />
                   <Bar dataKey="totalQty" radius={[4, 4, 0, 0]}>
                     {report.topProducts.slice(0, 8).map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                      <Cell
+                        key={i}
+                        fill={CHART_COLORS[i % CHART_COLORS.length]}
+                      />
                     ))}
                   </Bar>
                 </BarChart>
@@ -689,7 +722,6 @@ function SalesTab({
           )}
         </div>
 
-        {/* Recent sales table */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
             Recent Sales
@@ -755,7 +787,6 @@ function InventoryTab({
 
   return (
     <div className="space-y-6">
-      {/* Low Stock Alert */}
       {report.lowStockProducts.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-5">
           <div className="flex items-center gap-2 mb-4">
@@ -771,7 +802,8 @@ function InventoryTab({
               />
             </svg>
             <h3 className="text-sm font-semibold text-red-800">
-              Low Stock Alert — {report.lowStockProducts.length} product
+              Low Stock Alert —{' '}
+              {report.lowStockProducts.length} product
               {report.lowStockProducts.length !== 1 ? 's' : ''} need restocking
             </h3>
           </div>
@@ -782,7 +814,9 @@ function InventoryTab({
                 className="flex items-center justify-between bg-white rounded-lg px-4 py-3 border border-red-200"
               >
                 <div>
-                  <p className="text-sm font-semibold text-slate-900">{p.name}</p>
+                  <p className="text-sm font-semibold text-slate-900">
+                    {p.name}
+                  </p>
                   {p.sku && (
                     <p className="text-xs text-slate-400">SKU: {p.sku}</p>
                   )}
@@ -805,7 +839,6 @@ function InventoryTab({
         </div>
       )}
 
-      {/* High selling items bar chart */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           High-Selling Items (by Revenue)
@@ -820,7 +853,11 @@ function InventoryTab({
                 layout="vertical"
                 margin={{ left: 0, right: 30 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  horizontal={false}
+                />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11, fill: '#94a3b8' }}
@@ -868,7 +905,6 @@ function InventoryTab({
         )}
       </div>
 
-      {/* Full top products table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           Product Performance
@@ -882,10 +918,18 @@ function InventoryTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">Rank</th>
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">Product</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Units Sold</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Revenue</th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Rank
+                  </th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Product
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Units Sold
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Revenue
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -939,7 +983,6 @@ function CustomersTab({
 
   return (
     <div className="space-y-6">
-      {/* Top customers bar */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           Top Customers by Spending
@@ -954,7 +997,11 @@ function CustomersTab({
                 layout="vertical"
                 margin={{ left: 0, right: 30 }}
               >
-                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#f1f5f9"
+                  horizontal={false}
+                />
                 <XAxis
                   type="number"
                   tick={{ fontSize: 11, fill: '#94a3b8' }}
@@ -979,12 +1026,12 @@ function CustomersTab({
                     fontSize: '12px',
                   }}
                 />
-                <Bar
-                  dataKey="totalSpent"
-                  radius={[0, 4, 4, 0]}
-                >
+                <Bar dataKey="totalSpent" radius={[0, 4, 4, 0]}>
                   {top10.map((_, i) => (
-                    <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    <Cell
+                      key={i}
+                      fill={CHART_COLORS[i % CHART_COLORS.length]}
+                    />
                   ))}
                 </Bar>
               </BarChart>
@@ -993,7 +1040,6 @@ function CustomersTab({
         )}
       </div>
 
-      {/* Customer table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           Customer Purchase Summary
@@ -1007,17 +1053,29 @@ function CustomersTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">#</th>
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">Customer</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Orders</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Total Spent</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Avg Order</th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    #
+                  </th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Customer
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Orders
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Total Spent
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Avg Order
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {report.customerSummary.map((c, idx) => (
                   <tr key={c.customerId} className="hover:bg-slate-50">
-                    <td className="py-2.5 text-slate-400 text-xs">{idx + 1}</td>
+                    <td className="py-2.5 text-slate-400 text-xs">
+                      {idx + 1}
+                    </td>
                     <td className="py-2.5">
                       <div className="flex items-center gap-2">
                         <div className="w-7 h-7 bg-blue-100 rounded-full flex items-center justify-center text-blue-700 text-xs font-semibold">
@@ -1035,7 +1093,9 @@ function CustomersTab({
                       {fmt(c.totalSpent)}
                     </td>
                     <td className="py-2.5 text-right text-slate-600">
-                      {fmt(c.totalOrders > 0 ? c.totalSpent / c.totalOrders : 0)}
+                      {fmt(
+                        c.totalOrders > 0 ? c.totalSpent / c.totalOrders : 0
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1059,7 +1119,6 @@ function SuppliersTab({
 }) {
   const top10 = report.supplierSummary.slice(0, 10);
 
-  // Pie chart for supplier spend share
   const pieData = top10.slice(0, 6).map(s => ({
     name: s.supplierName,
     value: s.totalSpent,
@@ -1068,7 +1127,6 @@ function SuppliersTab({
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Spend share pie */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
             Supplier Spend Distribution
@@ -1112,7 +1170,6 @@ function SuppliersTab({
           )}
         </div>
 
-        {/* Supplier performance table */}
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <h3 className="text-sm font-semibold text-slate-900 mb-4">
             Supplier Performance
@@ -1186,7 +1243,6 @@ function PurchasesTab({
 }) {
   return (
     <div className="space-y-6">
-      {/* Recent purchases table */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h3 className="text-sm font-semibold text-slate-900 mb-4">
           Recent Purchases
@@ -1200,11 +1256,21 @@ function PurchasesTab({
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">Invoice</th>
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">Supplier</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">Landed Cost</th>
-                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">Status</th>
-                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">Date</th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Invoice
+                  </th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase hidden md:table-cell">
+                    Supplier
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Landed Cost
+                  </th>
+                  <th className="text-left py-2 text-xs font-semibold text-slate-500 uppercase">
+                    Status
+                  </th>
+                  <th className="text-right py-2 text-xs font-semibold text-slate-500 uppercase hidden lg:table-cell">
+                    Date
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -1243,7 +1309,6 @@ function PurchasesTab({
         )}
       </div>
 
-      {/* Summary stats */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
           {
@@ -1264,19 +1329,29 @@ function PurchasesTab({
             label: 'Avg Purchase Value',
             value:
               report.overview.totalPurchases > 0
-                ? fmt(report.overview.totalCost / report.overview.totalPurchases)
+                ? fmt(
+                    report.overview.totalCost /
+                      report.overview.totalPurchases
+                  )
                 : fmt(0),
             icon: '📊',
             color: 'text-violet-700',
             bg: 'bg-violet-50 border-violet-200',
           },
         ].map(card => (
-          <div key={card.label} className={`border rounded-xl p-5 ${card.bg}`}>
+          <div
+            key={card.label}
+            className={`border rounded-xl p-5 ${card.bg}`}
+          >
             <div className="flex items-start justify-between mb-2">
-              <p className="text-xs font-medium text-slate-500">{card.label}</p>
+              <p className="text-xs font-medium text-slate-500">
+                {card.label}
+              </p>
               <span className="text-xl">{card.icon}</span>
             </div>
-            <p className={`text-2xl font-bold ${card.color}`}>{card.value}</p>
+            <p className={`text-2xl font-bold ${card.color}`}>
+              {card.value}
+            </p>
           </div>
         ))}
       </div>
@@ -1296,16 +1371,3 @@ function EmptyChart({ label = 'No data available' }: { label?: string }) {
     </div>
   );
 }
-
-const CHART_COLORS = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ef4444',
-  '#8b5cf6',
-  '#06b6d4',
-  '#f97316',
-  '#84cc16',
-  '#ec4899',
-  '#6366f1',
-];
