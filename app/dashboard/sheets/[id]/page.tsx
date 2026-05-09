@@ -6,7 +6,8 @@ import { prisma } from '@/lib/db';
 import { redirect, notFound } from 'next/navigation';
 import FinanceApp from '@/components/templates/finance/FinanceApp';
 import InventoryApp from '@/components/templates/inventory/InventoryApp';
-import { getConfig } from '@/lib/google-sheet-business';
+// import { getConfig } from '@/lib/google-sheet-business';
+  import { readConfigFresh } from '@/lib/google-sheet-business';
 import BusinessApp from './business/BusinessApp';
 
 export default async function SheetAppPage({
@@ -70,7 +71,9 @@ export default async function SheetAppPage({
     let setupRequired = false;
 
     try {
-      config = await getConfig(connection.user.id, connection.spreadsheetId);
+      // config = await getConfig(connection.user.id, connection.spreadsheetId);
+    
+config = await readConfigFresh(connection.user.id, connection.spreadsheetId);
       setupRequired =
         !config.businessName || config.businessName.trim() === '';
     } catch {

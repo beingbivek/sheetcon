@@ -104,6 +104,9 @@ function sheetRowsToObjects(
 ): Record<string, any>[] {
   if (!data || data.length === 0) return [];
 
+  // Special handling for _Config tab (key/value pairs, no id)
+  const isKeyValueTable = headers[0] === 'key' && headers[1] === 'value';
+
   return data
     .filter(row => row.some(cell => cell !== '' && cell != null))
     .map(row => {
@@ -125,7 +128,14 @@ function sheetRowsToObjects(
       });
       return obj;
     })
-    .filter(obj => obj.id != null && obj.id !== '');
+    .filter(obj => {
+      // For key/value tables, filter by key not id
+      if (isKeyValueTable) {
+        return obj.key != null && obj.key !== '';
+      }
+      // For regular tables, filter by id
+      return obj.id != null && obj.id !== '';
+    });
 }
 
 function objectsToSheetRows(
@@ -362,6 +372,26 @@ export async function getConfig(
   );
 }
 
+export async function readConfigFresh(
+  userId: string,
+  spreadsheetId: string
+): Promise<Record<string, string>> {
+  const data = await queueReadRequest(userId, async () => {
+    const sheets = await makeSheetClient(userId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: RANGES.CONFIG,
+    });
+    return res.data.values as string[][];
+  });
+  const rows = sheetRowsToObjects(data, HEADERS.CONFIG);
+  return Object.fromEntries(
+    rows
+      .filter(r => r.key != null && r.key !== '')
+      .map(r => [String(r.key), String(r.value ?? '')])
+  );
+}
+
 export async function updateConfig(
   userId: string,
   spreadsheetId: string,
@@ -437,16 +467,17 @@ export async function getSuppliers(
     CACHE_TTL.CUSTOMERS
   );
 }
-
 export async function createSupplier(
   userId: string,
   spreadsheetId: string,
   input: Omit<Supplier, 'id' | 'createdAt'>
 ): Promise<Supplier> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getSuppliers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.SUPPLIERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
     const newSupplier: Supplier = {
       id: generateId('SUP', all),
       createdAt: new Date().toISOString(),
@@ -454,10 +485,8 @@ export async function createSupplier(
     };
     const values = objectsToSheetRows([newSupplier], HEADERS.SUPPLIERS);
     await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${TABS.SUPPLIERS}!A:J`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
+      spreadsheetId, range: `${TABS.SUPPLIERS}!A:J`,
+      valueInputOption: 'RAW', requestBody: { values },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
     return newSupplier;
@@ -471,18 +500,18 @@ export async function updateSupplier(
   updates: Partial<Omit<Supplier, 'id' | 'createdAt'>>
 ): Promise<Supplier> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getSuppliers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.SUPPLIERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
     const idx = all.findIndex(s => s.id === supplierId);
     if (idx === -1) throw new Error('Supplier not found');
     all[idx] = { ...all[idx], ...updates };
     const values = objectsToSheetRows(all, HEADERS.SUPPLIERS);
     await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.SUPPLIERS}!A2:J`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
+      spreadsheetId, range: `${TABS.SUPPLIERS}!A2:J`,
+      valueInputOption: 'RAW', requestBody: { values },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
     return all[idx];
@@ -495,23 +524,22 @@ export async function deleteSupplier(
   supplierId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getSuppliers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.SUPPLIERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
     const filtered = all.filter(s => s.id !== supplierId);
     if (filtered.length === all.length) throw new Error('Supplier not found');
     const values = objectsToSheetRows(filtered, HEADERS.SUPPLIERS);
     const padded = padValues(values, HEADERS.SUPPLIERS.length, all.length);
     await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.SUPPLIERS}!A2:J`,
-      valueInputOption: 'RAW',
-      requestBody: { values: padded },
+      spreadsheetId, range: `${TABS.SUPPLIERS}!A2:J`,
+      valueInputOption: 'RAW', requestBody: { values: padded },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
   });
 }
-
 // ═══════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════
@@ -557,15 +585,28 @@ export async function getProducts(
   );
 }
 
+// lib/google-sheet-business.ts
+// Replace createProduct and updateProduct with these versions
+// that read products directly inside the write lock instead of calling getProducts()
+
 export async function createProduct(
   userId: string,
   spreadsheetId: string,
   input: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Product> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getProducts(userId, spreadsheetId);
+
+    // ── Read directly, no queue, no cache ──
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: RANGES.PRODUCTS,
+    });
+    const all = sheetRowsToObjects(
+      res.data.values as string[][] | null,
+      HEADERS.PRODUCTS
+    ) as Product[];
+
     const now = new Date().toISOString();
     const newProduct: Product = {
       id: generateId('PROD', all),
@@ -592,9 +633,18 @@ export async function updateProduct(
   updates: Partial<Omit<Product, 'id' | 'createdAt'>>
 ): Promise<Product> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getProducts(userId, spreadsheetId);
+
+    // ── Read directly, no queue, no cache ──
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: RANGES.PRODUCTS,
+    });
+    const all = sheetRowsToObjects(
+      res.data.values as string[][] | null,
+      HEADERS.PRODUCTS
+    ) as Product[];
+
     const idx = all.findIndex(p => p.id === productId);
     if (idx === -1) throw new Error('Product not found');
     all[idx] = { ...all[idx], ...updates, updatedAt: new Date().toISOString() };
@@ -616,9 +666,18 @@ export async function deleteProduct(
   productId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getProducts(userId, spreadsheetId);
+
+    // ── Read directly, no queue, no cache ──
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId,
+      range: RANGES.PRODUCTS,
+    });
+    const all = sheetRowsToObjects(
+      res.data.values as string[][] | null,
+      HEADERS.PRODUCTS
+    ) as Product[];
+
     const filtered = all.filter(p => p.id !== productId);
     if (filtered.length === all.length) throw new Error('Product not found');
     const values = objectsToSheetRows(filtered, HEADERS.PRODUCTS);
@@ -632,7 +691,6 @@ export async function deleteProduct(
     await invalidateSpreadsheetCache(spreadsheetId);
   });
 }
-
 // ─── Internal: deduct stock (called inside queueWriteRequest) ─────────────────
 
 async function _rawDeductStock(
@@ -752,9 +810,11 @@ export async function createCustomer(
   input: Omit<Customer, 'id' | 'createdAt'>
 ): Promise<Customer> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getCustomers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.CUSTOMERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
     const newCustomer: Customer = {
       id: generateId('CUST', all),
       createdAt: new Date().toISOString(),
@@ -762,10 +822,8 @@ export async function createCustomer(
     };
     const values = objectsToSheetRows([newCustomer], HEADERS.CUSTOMERS);
     await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${TABS.CUSTOMERS}!A:I`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
+      spreadsheetId, range: `${TABS.CUSTOMERS}!A:I`,
+      valueInputOption: 'RAW', requestBody: { values },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
     return newCustomer;
@@ -779,18 +837,18 @@ export async function updateCustomer(
   updates: Partial<Omit<Customer, 'id' | 'createdAt'>>
 ): Promise<Customer> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getCustomers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.CUSTOMERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
     const idx = all.findIndex(c => c.id === customerId);
     if (idx === -1) throw new Error('Customer not found');
     all[idx] = { ...all[idx], ...updates };
     const values = objectsToSheetRows(all, HEADERS.CUSTOMERS);
     await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.CUSTOMERS}!A2:I`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
+      spreadsheetId, range: `${TABS.CUSTOMERS}!A2:I`,
+      valueInputOption: 'RAW', requestBody: { values },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
     return all[idx];
@@ -803,18 +861,18 @@ export async function deleteCustomer(
   customerId: string
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const all = await getCustomers(userId, spreadsheetId);
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.CUSTOMERS,
+    });
+    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
     const filtered = all.filter(c => c.id !== customerId);
     if (filtered.length === all.length) throw new Error('Customer not found');
     const values = objectsToSheetRows(filtered, HEADERS.CUSTOMERS);
     const padded = padValues(values, HEADERS.CUSTOMERS.length, all.length);
     await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.CUSTOMERS}!A2:I`,
-      valueInputOption: 'RAW',
-      requestBody: { values: padded },
+      spreadsheetId, range: `${TABS.CUSTOMERS}!A2:I`,
+      valueInputOption: 'RAW', requestBody: { values: padded },
     });
     await invalidateSpreadsheetCache(spreadsheetId);
   });
@@ -918,9 +976,15 @@ export async function createPurchase(
   }
 ): Promise<Purchase> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const allPurchases = await getPurchases(userId, spreadsheetId);
+
+    // Read directly
+    const pRes = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.PURCHASES,
+    });
+    const allPurchases = sheetRowsToObjects(
+      pRes.data.values as string[][] | null, HEADERS.PURCHASES
+    ) as Purchase[];
 
     const newPurchase: Purchase = {
       id: generateId('PUR', allPurchases),
@@ -932,10 +996,8 @@ export async function createPurchase(
 
     const purchaseValues = objectsToSheetRows([newPurchase], HEADERS.PURCHASES);
     await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${TABS.PURCHASES}!A:T`,
-      valueInputOption: 'RAW',
-      requestBody: { values: purchaseValues },
+      spreadsheetId, range: `${TABS.PURCHASES}!A:T`,
+      valueInputOption: 'RAW', requestBody: { values: purchaseValues },
     });
 
     if (input.items?.length > 0) {
@@ -944,17 +1006,11 @@ export async function createPurchase(
         purchaseId: newPurchase.id,
         ...item,
       }));
-      const itemValues = objectsToSheetRows(
-        purchaseItems,
-        HEADERS.PURCHASE_ITEMS
-      );
+      const itemValues = objectsToSheetRows(purchaseItems, HEADERS.PURCHASE_ITEMS);
       await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `${TABS.PURCHASE_ITEMS}!A:G`,
-        valueInputOption: 'RAW',
-        requestBody: { values: itemValues },
+        spreadsheetId, range: `${TABS.PURCHASE_ITEMS}!A:G`,
+        valueInputOption: 'RAW', requestBody: { values: itemValues },
       });
-
       await _rawRestoreStock(userId, spreadsheetId, purchaseItems);
       newPurchase.items = purchaseItems;
     }
@@ -1146,9 +1202,15 @@ export async function createSale(
   }
 ): Promise<Sale> {
   return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
     const sheets = await makeSheetClient(userId);
-    const allSales = await getSales(userId, spreadsheetId);
+
+    // Read directly
+    const sRes = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: RANGES.SALES,
+    });
+    const allSales = sheetRowsToObjects(
+      sRes.data.values as string[][] | null, HEADERS.SALES
+    ) as Sale[];
 
     const newSale: Sale = {
       id: generateId('SAL', allSales),
@@ -1160,10 +1222,8 @@ export async function createSale(
 
     const saleValues = objectsToSheetRows([newSale], HEADERS.SALES);
     await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${TABS.SALES}!A:S`,
-      valueInputOption: 'RAW',
-      requestBody: { values: saleValues },
+      spreadsheetId, range: `${TABS.SALES}!A:S`,
+      valueInputOption: 'RAW', requestBody: { values: saleValues },
     });
 
     if (input.items?.length > 0) {
@@ -1174,12 +1234,9 @@ export async function createSale(
       }));
       const itemValues = objectsToSheetRows(saleItems, HEADERS.SALE_ITEMS);
       await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `${TABS.SALE_ITEMS}!A:H`,
-        valueInputOption: 'RAW',
-        requestBody: { values: itemValues },
+        spreadsheetId, range: `${TABS.SALE_ITEMS}!A:H`,
+        valueInputOption: 'RAW', requestBody: { values: itemValues },
       });
-
       await _rawDeductStock(userId, spreadsheetId, saleItems);
       newSale.items = saleItems;
     }
