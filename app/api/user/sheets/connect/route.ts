@@ -1,4 +1,4 @@
-// app/api/user/sheets/connect/route.ts
+// app/api/user/sheets/connect/route.ts (COMPLETE REPLACEMENT)
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
@@ -10,6 +10,13 @@ import {
   initializeExistingSheet,
 } from '@/lib/google-sheet';
 import { createInventorySpreadsheet } from '@/lib/google-sheet-inventory';
+import {
+  createBusinessManagementSpreadsheet,
+  initializeExistingBusinessSheet,
+} from '@/lib/google-sheet-business';
+
+const VALID_TEMPLATES = ['finance', 'inventory', 'business-management'] as const;
+type TemplateId = (typeof VALID_TEMPLATES)[number];
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,7 +27,12 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { method, sheetId, sheetName, templateId } = body;
+    const { method, sheetId, sheetName, templateId } = body as {
+      method: 'create' | 'existing';
+      sheetId?: string;
+      sheetName?: string;
+      templateId: TemplateId;
+    };
 
     if (!method || !templateId) {
       return NextResponse.json(
@@ -29,16 +41,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Validate templateId
-    const validTemplates = ['finance', 'inventory'];
-    if (!validTemplates.includes(templateId)) {
+    if (!(VALID_TEMPLATES as readonly string[]).includes(templateId)) {
       return NextResponse.json(
         { error: 'Invalid template ID' },
         { status: 400 }
       );
     }
 
-    // Get user from database
     const user = await prisma.user.findUnique({
       where: { email: session.user.email! },
       include: {
@@ -53,15 +62,22 @@ export async function POST(request: NextRequest) {
 
     if (!user.accessToken) {
       return NextResponse.json(
-        { error: 'Google account not connected. Please sign out and sign in again.' },
+        {
+          error:
+            'Google account not connected. Please sign out and sign in again.',
+        },
         { status: 401 }
       );
     }
 
-    // Check sheet limit
-    if (user.tier.maxSheets !== -1 && user._count.sheetConnections >= user.tier.maxSheets) {
+    if (
+      user.tier.maxSheets !== -1 &&
+      user._count.sheetConnections >= user.tier.maxSheets
+    ) {
       return NextResponse.json(
-        { error: `Sheet limit reached (${user.tier.maxSheets}). Upgrade your plan.` },
+        {
+          error: `Sheet limit reached (${user.tier.maxSheets}). Upgrade your plan.`,
+        },
         { status: 403 }
       );
     }
@@ -70,23 +86,31 @@ export async function POST(request: NextRequest) {
     let finalSpreadsheetName: string;
     let finalSpreadsheetUrl: string;
 
+    const defaultNames: Record<TemplateId, string> = {
+      finance: 'Finance Tracker',
+      inventory: 'Inventory Manager',
+      'business-management': 'Business Management',
+    };
+
     if (method === 'create') {
-      // Create a new Google Sheet based on template
-      const sheetTitle = sheetName || `SheetCon - ${templateId === 'finance' ? 'Finance Tracker' : 'Inventory Manager'} - ${new Date().toLocaleDateString()}`;
-      
+      const sheetTitle =
+        sheetName ||
+        `SheetCon - ${defaultNames[templateId]} - ${new Date().toLocaleDateString()}`;
+
       let result: { spreadsheetId: string; spreadsheetUrl: string };
-      
+
       if (templateId === 'inventory') {
         result = await createInventorySpreadsheet(user.id, sheetTitle);
+      } else if (templateId === 'business-management') {
+        result = await createBusinessManagementSpreadsheet(user.id, sheetTitle);
       } else {
         result = await createFinanceSpreadsheet(user.id, sheetTitle);
       }
-      
+
       finalSpreadsheetId = result.spreadsheetId;
       finalSpreadsheetName = sheetTitle;
       finalSpreadsheetUrl = result.spreadsheetUrl;
     } else {
-      // Use existing sheet
       if (!sheetId) {
         return NextResponse.json(
           { error: 'Sheet ID is required for existing sheets' },
@@ -94,12 +118,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Check if already connected
       const existingConnection = await prisma.sheetConnection.findFirst({
-        where: {
-          userId: user.id,
-          spreadsheetId: sheetId,
-        },
+        where: { userId: user.id, spreadsheetId: sheetId },
       });
 
       if (existingConnection) {
@@ -109,21 +129,19 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Verify access and get metadata
       const metadata = await getSpreadsheetMetadata(user.id, sheetId);
-      
-      // Initialize with headers if needed
+
       if (templateId === 'finance') {
         await initializeExistingSheet(user.id, sheetId, 'Sheet1');
+      } else if (templateId === 'business-management') {
+        await initializeExistingBusinessSheet(user.id, sheetId);
       }
-      // For inventory, user needs to use "Create New" as it requires multiple sheets
 
       finalSpreadsheetId = sheetId;
       finalSpreadsheetName = sheetName || metadata.title;
       finalSpreadsheetUrl = `https://docs.google.com/spreadsheets/d/${sheetId}`;
     }
 
-    // Create connection in database
     const connection = await prisma.sheetConnection.create({
       data: {
         userId: user.id,
@@ -150,16 +168,25 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error('Error connecting sheet:', error);
 
-    if (error.message?.includes('invalid_grant') || error.message?.includes('Token')) {
+    if (
+      error.message?.includes('invalid_grant') ||
+      error.message?.includes('Token')
+    ) {
       return NextResponse.json(
-        { error: 'Google session expired. Please sign out and sign in again.' },
+        {
+          error:
+            'Google session expired. Please sign out and sign in again.',
+        },
         { status: 401 }
       );
     }
 
     if (error.code === 403) {
       return NextResponse.json(
-        { error: 'Access denied. Make sure you have permission to access this sheet.' },
+        {
+          error:
+            'Access denied. Make sure you have permission to access this sheet.',
+        },
         { status: 403 }
       );
     }
