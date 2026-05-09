@@ -1,9 +1,7 @@
 // app/api/user/sheets/[id]/business/customers/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { handleApiError } from '@/lib/errors';
-import { requireAuth } from '@/lib/security';
-import { requireRateLimit } from '@/lib/rate-limit';
+import { handleApiError, requireAuth, requireRateLimit } from '@/lib/security';
 import { prisma } from '@/lib/db';
 import { getCustomers, createCustomer } from '@/lib/google-sheet-business';
 import { z } from 'zod/v4';
