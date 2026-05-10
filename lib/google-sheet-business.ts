@@ -1,67 +1,153 @@
 // lib/google-sheet-business.ts (COMPLETE REPLACEMENT)
 
-import { getOAuth2Client } from '@/lib/google-sheet';
-import { queueReadRequest, queueWriteRequest } from '@/lib/google-sheets-queue';
+import { getOAuth2Client } from "@/lib/google-sheet";
+import { queueReadRequest, queueWriteRequest } from "@/lib/google-sheets-queue";
+import { prisma } from "@/lib/db";
+import {
+  enqueueProductSync,
+  enqueueProductDeleteSync,
+  importProductsFromSheet,
+  enqueueSupplierSync, // ADD
+  enqueueSupplierDeleteSync, // ADD
+  importSuppliersFromSheet,
+  enqueueCustomerSync, // ADD
+  enqueueCustomerDeleteSync, // ADD
+  importCustomersFromSheet,
+  enqueuePurchaseSync, // ADD
+  enqueuePurchaseDeleteSync, // ADD
+  importPurchasesFromSheet, // ADD
+  enqueueSaleSync, // ADD
+  enqueueSaleDeleteSync, // ADD
+  importSalesFromSheet,
+  importConfigFromSheet,  // ADD
+  enqueueConfigSync,
+} from "@/lib/db-sync";
 import {
   getOrFetch,
   invalidateSpreadsheetCache,
   getCacheKey,
   CACHE_PREFIX,
   CACHE_TTL,
-} from '@/lib/cache';
-import { google } from 'googleapis';
+} from "@/lib/cache";
+import { google } from "googleapis";
 
 // ═══════════════════════════════════════════════════
 // CONSTANTS
 // ═══════════════════════════════════════════════════
 
 export const TABS = {
-  CONFIG: '_Config',
-  SUPPLIERS: 'Suppliers',
-  PRODUCTS: 'Products',
-  CUSTOMERS: 'Customers',
-  PURCHASES: 'Purchases',
-  PURCHASE_ITEMS: 'PurchaseItems',
-  SALES: 'Sales',
-  SALE_ITEMS: 'SaleItems',
+  CONFIG: "_Config",
+  SUPPLIERS: "Suppliers",
+  PRODUCTS: "Products",
+  CUSTOMERS: "Customers",
+  PURCHASES: "Purchases",
+  PURCHASE_ITEMS: "PurchaseItems",
+  SALES: "Sales",
+  SALE_ITEMS: "SaleItems",
 } as const;
 
 export const HEADERS = {
-  CONFIG: ['key', 'value'] as const,
+  CONFIG: ["key", "value"] as const,
   SUPPLIERS: [
-    'id', 'name', 'phone', 'email', 'address', 'city',
-    'contactPerson', 'paymentTerms', 'notes', 'createdAt',
+    "id",
+    "name",
+    "phone",
+    "email",
+    "address",
+    "city",
+    "contactPerson",
+    "paymentTerms",
+    "notes",
+    "createdAt",
   ] as const,
   PRODUCTS: [
-    'id', 'name', 'sku', 'category', 'description',
-    'costPrice', 'sellingPrice', 'stock', 'minStock',
-    'unit', 'supplierId', 'supplierName', 'imageUrl',
-    'createdAt', 'updatedAt',
+    "id",
+    "name",
+    "sku",
+    "category",
+    "description",
+    "costPrice",
+    "sellingPrice",
+    "stock",
+    "minStock",
+    "unit",
+    "supplierId",
+    "supplierName",
+    "imageUrl",
+    "createdAt",
+    "updatedAt",
   ] as const,
   CUSTOMERS: [
-    'id', 'name', 'phone', 'email', 'address',
-    'city', 'customerType', 'notes', 'createdAt',
+    "id",
+    "name",
+    "phone",
+    "email",
+    "address",
+    "city",
+    "customerType",
+    "notes",
+    "createdAt",
   ] as const,
   PURCHASES: [
-    'id', 'invoiceNumber', 'date', 'supplierId', 'supplierName',
-    'subtotal', 'taxPercent', 'taxAmount', 'transportCost',
-    'customsCost', 'storageCost', 'otherExpenses', 'landedCost',
-    'total', 'amountPaid', 'amountDue', 'status', 'imageUrl',
-    'notes', 'createdAt',
+    "id",
+    "invoiceNumber",
+    "date",
+    "supplierId",
+    "supplierName",
+    "subtotal",
+    "taxPercent",
+    "taxAmount",
+    "transportCost",
+    "customsCost",
+    "storageCost",
+    "otherExpenses",
+    "landedCost",
+    "total",
+    "amountPaid",
+    "amountDue",
+    "status",
+    "imageUrl",
+    "notes",
+    "createdAt",
   ] as const,
   PURCHASE_ITEMS: [
-    'id', 'purchaseId', 'productId', 'productName',
-    'quantity', 'unitPrice', 'total',
+    "id",
+    "purchaseId",
+    "productId",
+    "productName",
+    "quantity",
+    "unitPrice",
+    "total",
   ] as const,
   SALES: [
-    'id', 'invoiceNumber', 'date', 'customerId', 'customerName',
-    'subtotal', 'discountType', 'discountValue', 'discountAmount',
-    'taxPercent', 'taxAmount', 'total', 'amountPaid',
-    'amountDue', 'paymentMethod', 'status', 'notes', 'createdAt',
+    "id",
+    "invoiceNumber",
+    "date",
+    "customerId",
+    "customerName",
+    "subtotal",
+    "discountType",
+    "discountValue",
+    "discountAmount",
+    "taxPercent",
+    "taxAmount",
+    "total",
+    "amountPaid",
+    "amountDue",
+    "paymentMethod",
+    "status",
+    "notes",
+    "createdAt",
   ] as const,
   SALE_ITEMS: [
-    'id', 'saleId', 'productId', 'productName',
-    'variation', 'quantity', 'unitPrice', 'total',
+    "id",
+    "saleId",
+    "productId",
+    "productName",
+    "variation",
+    "quantity",
+    "unitPrice",
+    "total",
   ] as const,
 } as const;
 
@@ -77,16 +163,28 @@ const RANGES = {
 } as const;
 
 const NUMERIC_FIELDS = new Set([
-  'costPrice', 'sellingPrice', 'stock', 'minStock',
-  'subtotal', 'taxPercent', 'taxAmount', 'total',
-  'amountPaid', 'amountDue', 'quantity', 'unitPrice',
-  'discountValue', 'discountAmount', 'transportCost',
-  'customsCost', 'storageCost', 'otherExpenses', 'landedCost',
+  "costPrice",
+  "sellingPrice",
+  "stock",
+  "minStock",
+  "subtotal",
+  "taxPercent",
+  "taxAmount",
+  "total",
+  "amountPaid",
+  "amountDue",
+  "quantity",
+  "unitPrice",
+  "discountValue",
+  "discountAmount",
+  "transportCost",
+  "customsCost",
+  "storageCost",
+  "otherExpenses",
+  "landedCost",
 ]);
 
-const DATE_FIELDS = new Set([
-  'createdAt', 'updatedAt', 'date',
-]);
+const DATE_FIELDS = new Set(["createdAt", "updatedAt", "date"]);
 
 // ═══════════════════════════════════════════════════
 // HELPERS
@@ -95,88 +193,88 @@ const DATE_FIELDS = new Set([
 // ── async: must await getOAuth2Client ──────────────
 async function makeSheetClient(userId: string) {
   const auth = await getOAuth2Client(userId);
-  return google.sheets({ version: 'v4', auth });
+  return google.sheets({ version: "v4", auth });
 }
 
 function sheetRowsToObjects(
   data: string[][] | null | undefined,
-  headers: readonly string[]
+  headers: readonly string[],
 ): Record<string, any>[] {
   if (!data || data.length === 0) return [];
 
   // Special handling for _Config tab (key/value pairs, no id)
-  const isKeyValueTable = headers[0] === 'key' && headers[1] === 'value';
+  const isKeyValueTable = headers[0] === "key" && headers[1] === "value";
 
   return data
-    .filter(row => row.some(cell => cell !== '' && cell != null))
-    .map(row => {
+    .filter((row) => row.some((cell) => cell !== "" && cell != null))
+    .map((row) => {
       const obj: Record<string, any> = {};
       headers.forEach((header, i) => {
-        const raw = row[i] ?? '';
+        const raw = row[i] ?? "";
         if (NUMERIC_FIELDS.has(header)) {
-          obj[header] = raw === '' ? 0 : parseFloat(String(raw)) || 0;
+          obj[header] = raw === "" ? 0 : parseFloat(String(raw)) || 0;
         } else if (DATE_FIELDS.has(header)) {
-          if (raw === '') {
+          if (raw === "") {
             obj[header] = null;
           } else {
             const d = new Date(raw);
             obj[header] = isNaN(d.getTime()) ? raw : d.toISOString();
           }
         } else {
-          obj[header] = raw === '' ? null : raw;
+          obj[header] = raw === "" ? null : raw;
         }
       });
       return obj;
     })
-    .filter(obj => {
+    .filter((obj) => {
       // For key/value tables, filter by key not id
       if (isKeyValueTable) {
-        return obj.key != null && obj.key !== '';
+        return obj.key != null && obj.key !== "";
       }
       // For regular tables, filter by id
-      return obj.id != null && obj.id !== '';
+      return obj.id != null && obj.id !== "";
     });
 }
 
 function objectsToSheetRows(
   objects: Record<string, any>[],
-  headers: readonly string[]
+  headers: readonly string[],
 ): string[][] {
-  return objects.map(obj =>
-    headers.map(h => {
+  return objects.map((obj) =>
+    headers.map((h) => {
       const val = obj[h];
-      if (val == null) return '';
+      if (val == null) return "";
       if (val instanceof Date) return val.toISOString();
       return String(val);
-    })
+    }),
   );
 }
 
 function generateId(prefix: string, existing: Record<string, any>[]): string {
   if (existing.length === 0) return `${prefix}_1`;
   const nums = existing
-    .map(r => parseInt(String(r.id ?? '').replace(`${prefix}_`, '') || '0'))
-    .filter(n => !isNaN(n));
+    .map((r) => parseInt(String(r.id ?? "").replace(`${prefix}_`, "") || "0"))
+    .filter((n) => !isNaN(n));
   const max = nums.length > 0 ? Math.max(...nums) : 0;
   return `${prefix}_${max + 1}`;
 }
 
 function generateInvoiceNumber(
   prefix: string,
-  existing: Record<string, any>[]
+  existing: Record<string, any>[],
 ): string {
   const date = new Date();
-  const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const ymd = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(date.getDate()).padStart(2, "0")}`;
   const count = existing.length + 1;
-  return `${prefix}-${ymd}-${String(count).padStart(4, '0')}`;
+  return `${prefix}-${ymd}-${String(count).padStart(4, "0")}`;
 }
 
 function padValues(
   values: string[][],
   colCount: number,
-  originalLength: number
+  originalLength: number,
 ): string[][] {
-  const emptyRow = Array<string>(colCount).fill('');
+  const emptyRow = Array<string>(colCount).fill("");
   const result = [...values];
   while (result.length < originalLength) {
     result.push(emptyRow);
@@ -190,7 +288,7 @@ function padValues(
 
 export async function createBusinessManagementSpreadsheet(
   userId: string,
-  title: string
+  title: string,
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
   return queueWriteRequest(userId, async () => {
     // ── await makeSheetClient ──
@@ -216,7 +314,7 @@ export async function createBusinessManagementSpreadsheet(
     const sheetMeta = created.data.sheets || [];
 
     const getSheetId = (tabName: string): number => {
-      const found = sheetMeta.find(s => s.properties?.title === tabName);
+      const found = sheetMeta.find((s) => s.properties?.title === tabName);
       return found?.properties?.sheetId ?? 0;
     };
 
@@ -234,7 +332,7 @@ export async function createBusinessManagementSpreadsheet(
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
-        valueInputOption: 'RAW',
+        valueInputOption: "RAW",
         data: headerEntries.map(({ tab, headers }) => ({
           range: `${tab}!A1:${String.fromCharCode(64 + headers.length)}1`,
           values: [Array.from(headers)],
@@ -259,10 +357,11 @@ export async function createBusinessManagementSpreadsheet(
               bold: true,
               fontSize: 10,
             },
-            horizontalAlignment: 'CENTER',
+            horizontalAlignment: "CENTER",
           },
         },
-        fields: 'userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)',
+        fields:
+          "userEnteredFormat(backgroundColor,textFormat,horizontalAlignment)",
       },
     }));
 
@@ -272,7 +371,7 @@ export async function createBusinessManagementSpreadsheet(
           sheetId: getSheetId(tab),
           gridProperties: { frozenRowCount: 1 },
         },
-        fields: 'gridProperties.frozenRowCount',
+        fields: "gridProperties.frozenRowCount",
       },
     }));
 
@@ -290,7 +389,7 @@ export async function createBusinessManagementSpreadsheet(
 
 export async function initializeExistingBusinessSheet(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<void> {
   return queueWriteRequest(userId, async () => {
     // ── await makeSheetClient ──
@@ -298,11 +397,11 @@ export async function initializeExistingBusinessSheet(
 
     const meta = await sheets.spreadsheets.get({ spreadsheetId });
     const existingTitles = new Set(
-      meta.data.sheets?.map(s => s.properties?.title ?? '') ?? []
+      meta.data.sheets?.map((s) => s.properties?.title ?? "") ?? [],
     );
 
     const addSheetRequests = Object.values(TABS)
-      .filter(tab => !existingTitles.has(tab))
+      .filter((tab) => !existingTitles.has(tab))
       .map((tab, i) => ({
         addSheet: {
           properties: { title: tab, index: existingTitles.size + i },
@@ -330,7 +429,7 @@ export async function initializeExistingBusinessSheet(
     await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
       requestBody: {
-        valueInputOption: 'RAW',
+        valueInputOption: "RAW",
         data: headerEntries.map(({ tab, headers }) => ({
           range: `${tab}!A1:${String.fromCharCode(64 + headers.length)}1`,
           values: [Array.from(headers)],
@@ -349,11 +448,65 @@ export async function getConfig(
   spreadsheetId: string
 ): Promise<Record<string, string>> {
   const cacheKey = getCacheKey(CACHE_PREFIX.METADATA, spreadsheetId, 'biz-config');
+
   return getOrFetch(
     cacheKey,
     async () => {
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
+
+      if (connection) {
+        const dbConfig = await prisma.businessConfig.findUnique({
+          where: { sheetConnectionId: connection.id },
+        });
+
+        if (dbConfig) {
+          return {
+            businessName: dbConfig.businessName ?? '',
+            logoUrl: dbConfig.logoUrl ?? '',
+            address: dbConfig.address ?? '',
+            phone: dbConfig.phone ?? '',
+            email: dbConfig.email ?? '',
+            website: dbConfig.website ?? '',
+            taxNumber: dbConfig.taxNumber ?? '',
+            currency: dbConfig.currency ?? '',
+            currencySymbol: dbConfig.currencySymbol ?? '',
+            paymentQrUrl: dbConfig.paymentQrUrl ?? '',
+            invoicePrefix: dbConfig.invoicePrefix ?? '',
+            invoiceFooter: dbConfig.invoiceFooter ?? '',
+            lowStockThreshold: dbConfig.lowStockThreshold ?? '',
+          };
+        }
+
+        // DB empty — one-time import from sheet
+        await importConfigFromSheet(userId, connection.id, spreadsheetId);
+        const imported = await prisma.businessConfig.findUnique({
+          where: { sheetConnectionId: connection.id },
+        });
+
+        if (imported) {
+          return {
+            businessName: imported.businessName ?? '',
+            logoUrl: imported.logoUrl ?? '',
+            address: imported.address ?? '',
+            phone: imported.phone ?? '',
+            email: imported.email ?? '',
+            website: imported.website ?? '',
+            taxNumber: imported.taxNumber ?? '',
+            currency: imported.currency ?? '',
+            currencySymbol: imported.currencySymbol ?? '',
+            paymentQrUrl: imported.paymentQrUrl ?? '',
+            invoicePrefix: imported.invoicePrefix ?? '',
+            invoiceFooter: imported.invoiceFooter ?? '',
+            lowStockThreshold: imported.lowStockThreshold ?? '',
+          };
+        }
+      }
+
+      // Fallback: direct sheet read
       const data = await queueReadRequest(userId, async () => {
-        // ── await makeSheetClient ──
         const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
@@ -372,9 +525,10 @@ export async function getConfig(
   );
 }
 
+
 export async function readConfigFresh(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Record<string, string>> {
   const data = await queueReadRequest(userId, async () => {
     const sheets = await makeSheetClient(userId);
@@ -387,8 +541,8 @@ export async function readConfigFresh(
   const rows = sheetRowsToObjects(data, HEADERS.CONFIG);
   return Object.fromEntries(
     rows
-      .filter(r => r.key != null && r.key !== '')
-      .map(r => [String(r.key), String(r.value ?? '')])
+      .filter((r) => r.key != null && r.key !== "")
+      .map((r) => [String(r.key), String(r.value ?? "")]),
   );
 }
 
@@ -397,35 +551,110 @@ export async function updateConfig(
   spreadsheetId: string,
   updates: Record<string, string>
 ): Promise<Record<string, string>> {
-  return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
-    const sheets = await makeSheetClient(userId);
-
-    const existing = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.CONFIG,
-    });
-    const rows = sheetRowsToObjects(
-      existing.data.values as string[][] | null,
-      HEADERS.CONFIG
-    );
-
-    const configMap: Record<string, string> = Object.fromEntries(
-      rows.filter(r => r.key).map(r => [String(r.key), String(r.value ?? '')])
-    );
-    Object.assign(configMap, updates);
-
-    const values = Object.entries(configMap).map(([k, v]) => [k, v]);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.CONFIG}!A2:B`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
-    });
-
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return configMap;
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const existing = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.CONFIG,
+      });
+      const rows = sheetRowsToObjects(
+        existing.data.values as string[][] | null,
+        HEADERS.CONFIG
+      );
+      const configMap: Record<string, string> = Object.fromEntries(
+        rows.filter(r => r.key).map(r => [String(r.key), String(r.value ?? '')])
+      );
+      Object.assign(configMap, updates);
+      const values = Object.entries(configMap).map(([k, v]) => [k, v]);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.CONFIG}!A2:B`,
+        valueInputOption: 'RAW',
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return configMap;
+    });
+  }
+
+  // DB-first
+  const existing = await prisma.businessConfig.findUnique({
+    where: { sheetConnectionId: connection.id },
+  });
+
+  if (!existing) {
+    await prisma.businessConfig.create({
+      data: {
+        sheetConnectionId: connection.id,
+        externalSheetId: spreadsheetId,
+        businessName: updates.businessName ?? null,
+        logoUrl: updates.logoUrl ?? null,
+        address: updates.address ?? null,
+        phone: updates.phone ?? null,
+        email: updates.email ?? null,
+        website: updates.website ?? null,
+        taxNumber: updates.taxNumber ?? null,
+        currency: updates.currency ?? null,
+        currencySymbol: updates.currencySymbol ?? null,
+        paymentQrUrl: updates.paymentQrUrl ?? null,
+        invoicePrefix: updates.invoicePrefix ?? null,
+        invoiceFooter: updates.invoiceFooter ?? null,
+        lowStockThreshold: updates.lowStockThreshold ?? null,
+        syncStatus: 'PENDING',
+      },
+    });
+  } else {
+    await prisma.businessConfig.update({
+      where: { sheetConnectionId: connection.id },
+      data: {
+        businessName: updates.businessName ?? existing.businessName,
+        logoUrl: updates.logoUrl ?? existing.logoUrl,
+        address: updates.address ?? existing.address,
+        phone: updates.phone ?? existing.phone,
+        email: updates.email ?? existing.email,
+        website: updates.website ?? existing.website,
+        taxNumber: updates.taxNumber ?? existing.taxNumber,
+        currency: updates.currency ?? existing.currency,
+        currencySymbol: updates.currencySymbol ?? existing.currencySymbol,
+        paymentQrUrl: updates.paymentQrUrl ?? existing.paymentQrUrl,
+        invoicePrefix: updates.invoicePrefix ?? existing.invoicePrefix,
+        invoiceFooter: updates.invoiceFooter ?? existing.invoiceFooter,
+        lowStockThreshold: updates.lowStockThreshold ?? existing.lowStockThreshold,
+        updatedAt: new Date(),
+        syncStatus: 'PENDING',
+        lastSyncedAt: null,
+      },
+    });
+  }
+
+  enqueueConfigSync(userId, spreadsheetId);
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  const updated = await prisma.businessConfig.findUnique({
+    where: { sheetConnectionId: connection.id },
+  });
+
+  return {
+    businessName: updated?.businessName ?? '',
+    logoUrl: updated?.logoUrl ?? '',
+    address: updated?.address ?? '',
+    phone: updated?.phone ?? '',
+    email: updated?.email ?? '',
+    website: updated?.website ?? '',
+    taxNumber: updated?.taxNumber ?? '',
+    currency: updated?.currency ?? '',
+    currencySymbol: updated?.currencySymbol ?? '',
+    paymentQrUrl: updated?.paymentQrUrl ?? '',
+    invoicePrefix: updated?.invoicePrefix ?? '',
+    invoiceFooter: updated?.invoiceFooter ?? '',
+    lowStockThreshold: updated?.lowStockThreshold ?? '',
+  };
 }
 
 // ═══════════════════════════════════════════════════
@@ -445,16 +674,66 @@ export interface Supplier {
   createdAt: string;
 }
 
+// lib/google-sheet-business.ts
+// REPLACE: getSuppliers, createSupplier, updateSupplier, deleteSupplier
+
+function dbRowToSupplier(r: {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  contactPerson: string | null;
+  paymentTerms: string | null;
+  notes: string | null;
+  createdAt: Date;
+}): Supplier {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    city: r.city,
+    contactPerson: r.contactPerson,
+    paymentTerms: r.paymentTerms,
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
 export async function getSuppliers(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Supplier[]> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.CUSTOMERS, spreadsheetId, 'biz-suppliers');
+  const cacheKey = getCacheKey(
+    CACHE_PREFIX.CUSTOMERS,
+    spreadsheetId,
+    "biz-suppliers",
+  );
+
   return getOrFetch(
     cacheKey,
     async () => {
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
+
+      if (connection) {
+        const dbRows = await prisma.businessSupplier.findMany({
+          where: {
+            sheetConnectionId: connection.id,
+            externalSheetId: spreadsheetId,
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        return dbRows.map(dbRowToSupplier);
+      }
+
+      // Fallback: direct sheet read
       const data = await queueReadRequest(userId, async () => {
-        // ── await makeSheetClient ──
         const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
@@ -464,82 +743,188 @@ export async function getSuppliers(
       });
       return sheetRowsToObjects(data, HEADERS.SUPPLIERS) as Supplier[];
     },
-    CACHE_TTL.CUSTOMERS
+    CACHE_TTL.CUSTOMERS,
   );
 }
+
 export async function createSupplier(
   userId: string,
   spreadsheetId: string,
-  input: Omit<Supplier, 'id' | 'createdAt'>
+  input: Omit<Supplier, "id" | "createdAt">,
 ): Promise<Supplier> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.SUPPLIERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
-    const newSupplier: Supplier = {
-      id: generateId('SUP', all),
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-    const values = objectsToSheetRows([newSupplier], HEADERS.SUPPLIERS);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${TABS.SUPPLIERS}!A:J`,
-      valueInputOption: 'RAW', requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return newSupplier;
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.SUPPLIERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.SUPPLIERS,
+      ) as Supplier[];
+      const newSupplier: Supplier = {
+        id: generateId("SUP", all),
+        createdAt: new Date().toISOString(),
+        ...input,
+      };
+      const values = objectsToSheetRows([newSupplier], HEADERS.SUPPLIERS);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${TABS.SUPPLIERS}!A:J`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return newSupplier;
+    });
+  }
+
+  // DB-first
+  const lastSupplier = await prisma.businessSupplier.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const nextId = generateId(
+    "SUP",
+    lastSupplier ? [{ id: lastSupplier.id }] : [],
+  );
+
+  const created = await prisma.businessSupplier.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      name: input.name,
+      phone: input.phone,
+      email: input.email,
+      address: input.address,
+      city: input.city,
+      contactPerson: input.contactPerson,
+      paymentTerms: input.paymentTerms,
+      notes: input.notes,
+      createdAt: new Date(),
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  enqueueSupplierSync(userId, spreadsheetId, created.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToSupplier(created);
 }
 
 export async function updateSupplier(
   userId: string,
   spreadsheetId: string,
   supplierId: string,
-  updates: Partial<Omit<Supplier, 'id' | 'createdAt'>>
+  updates: Partial<Omit<Supplier, "id" | "createdAt">>,
 ): Promise<Supplier> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.SUPPLIERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
-    const idx = all.findIndex(s => s.id === supplierId);
-    if (idx === -1) throw new Error('Supplier not found');
-    all[idx] = { ...all[idx], ...updates };
-    const values = objectsToSheetRows(all, HEADERS.SUPPLIERS);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId, range: `${TABS.SUPPLIERS}!A2:J`,
-      valueInputOption: 'RAW', requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return all[idx];
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.SUPPLIERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.SUPPLIERS,
+      ) as Supplier[];
+      const idx = all.findIndex((s) => s.id === supplierId);
+      if (idx === -1) throw new Error("Supplier not found");
+      all[idx] = { ...all[idx], ...updates };
+      const values = objectsToSheetRows(all, HEADERS.SUPPLIERS);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.SUPPLIERS}!A2:J`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return all[idx];
+    });
+  }
+
+  const updated = await prisma.businessSupplier.update({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: supplierId,
+      },
+    },
+    data: {
+      ...updates,
+      updatedAt: new Date(),
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  enqueueSupplierSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToSupplier(updated);
 }
 
 export async function deleteSupplier(
   userId: string,
   spreadsheetId: string,
-  supplierId: string
+  supplierId: string,
 ): Promise<void> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.SUPPLIERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.SUPPLIERS) as Supplier[];
-    const filtered = all.filter(s => s.id !== supplierId);
-    if (filtered.length === all.length) throw new Error('Supplier not found');
-    const values = objectsToSheetRows(filtered, HEADERS.SUPPLIERS);
-    const padded = padValues(values, HEADERS.SUPPLIERS.length, all.length);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId, range: `${TABS.SUPPLIERS}!A2:J`,
-      valueInputOption: 'RAW', requestBody: { values: padded },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.SUPPLIERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.SUPPLIERS,
+      ) as Supplier[];
+      const filtered = all.filter((s) => s.id !== supplierId);
+      if (filtered.length === all.length) throw new Error("Supplier not found");
+      const values = objectsToSheetRows(filtered, HEADERS.SUPPLIERS);
+      const padded = padValues(values, HEADERS.SUPPLIERS.length, all.length);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.SUPPLIERS}!A2:J`,
+        valueInputOption: "RAW",
+        requestBody: { values: padded },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+    });
+  }
+
+  await prisma.businessSupplier.delete({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: supplierId,
+      },
+    },
+  });
+
+  enqueueSupplierDeleteSync(userId, spreadsheetId, supplierId);
+  await invalidateSpreadsheetCache(spreadsheetId);
 }
+
 // ═══════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════
@@ -564,14 +949,26 @@ export interface Product {
 
 export async function getProducts(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Product[]> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.PRODUCTS, spreadsheetId, 'biz-products');
+  const cacheKey = getCacheKey(
+    CACHE_PREFIX.PRODUCTS,
+    spreadsheetId,
+    "biz-products",
+  );
+
   return getOrFetch(
     cacheKey,
     async () => {
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
+
+      if (!connection) throw new Error('Connection not found')
+
+      // No connection record — fallback to direct sheet read
       const data = await queueReadRequest(userId, async () => {
-        // ── await makeSheetClient ──
         const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
@@ -581,122 +978,259 @@ export async function getProducts(
       });
       return sheetRowsToObjects(data, HEADERS.PRODUCTS) as Product[];
     },
-    CACHE_TTL.PRODUCTS
+    CACHE_TTL.PRODUCTS,
   );
 }
-
-// lib/google-sheet-business.ts
-// Replace createProduct and updateProduct with these versions
-// that read products directly inside the write lock instead of calling getProducts()
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function createProduct(
   userId: string,
   spreadsheetId: string,
-  input: Omit<Product, 'id' | 'createdAt' | 'updatedAt'>
+  input: Omit<Product, "id" | "createdAt" | "updatedAt">,
 ): Promise<Product> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
 
-    // ── Read directly, no queue, no cache ──
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.PRODUCTS,
+  if (!connection) {
+    // Fallback: direct sheet write (old behavior)
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.PRODUCTS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.PRODUCTS,
+      ) as Product[];
+      const now = new Date().toISOString();
+      const newProduct: Product = {
+        id: generateId("PROD", all),
+        createdAt: now,
+        updatedAt: now,
+        ...input,
+      };
+      const values = objectsToSheetRows([newProduct], HEADERS.PRODUCTS);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${TABS.PRODUCTS}!A:O`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return newProduct;
     });
-    const all = sheetRowsToObjects(
-      res.data.values as string[][] | null,
-      HEADERS.PRODUCTS
-    ) as Product[];
+  }
 
-    const now = new Date().toISOString();
-    const newProduct: Product = {
-      id: generateId('PROD', all),
+  // ✅ DB-first write
+  // Generate ID matching sheet pattern (PROD_N) to stay compatible
+  const lastProduct = await prisma.businessProduct.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const nextId = generateId(
+    "PROD",
+    lastProduct ? [{ id: lastProduct.id }] : [],
+  );
+
+  const now = new Date();
+  const created = await prisma.businessProduct.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      name: input.name,
+      sku: input.sku,
+      category: input.category,
+      description: input.description,
+      costPrice: input.costPrice,
+      sellingPrice: input.sellingPrice,
+      stock: input.stock,
+      minStock: input.minStock,
+      unit: input.unit,
+      supplierId: input.supplierId,
+      supplierName: input.supplierName,
+      imageUrl: input.imageUrl,
       createdAt: now,
       updatedAt: now,
-      ...input,
-    };
-    const values = objectsToSheetRows([newProduct], HEADERS.PRODUCTS);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${TABS.PRODUCTS}!A:O`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return newProduct;
+      lastSyncedAt: null,
+      syncStatus: "PENDING",
+    },
   });
+
+  // Non-blocking sheet sync
+  enqueueProductSync(userId, spreadsheetId, created.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  return dbRowToProduct(created);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function updateProduct(
   userId: string,
   spreadsheetId: string,
   productId: string,
-  updates: Partial<Omit<Product, 'id' | 'createdAt'>>
+  updates: Partial<Omit<Product, "id" | "createdAt">>,
 ): Promise<Product> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-
-    // ── Read directly, no queue, no cache ──
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.PRODUCTS,
-    });
-    const all = sheetRowsToObjects(
-      res.data.values as string[][] | null,
-      HEADERS.PRODUCTS
-    ) as Product[];
-
-    const idx = all.findIndex(p => p.id === productId);
-    if (idx === -1) throw new Error('Product not found');
-    all[idx] = { ...all[idx], ...updates, updatedAt: new Date().toISOString() };
-    const values = objectsToSheetRows(all, HEADERS.PRODUCTS);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.PRODUCTS}!A2:O`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return all[idx];
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.PRODUCTS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.PRODUCTS,
+      ) as Product[];
+      const idx = all.findIndex((p) => p.id === productId);
+      if (idx === -1) throw new Error("Product not found");
+      all[idx] = {
+        ...all[idx],
+        ...updates,
+        updatedAt: new Date().toISOString(),
+      };
+      const values = objectsToSheetRows(all, HEADERS.PRODUCTS);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.PRODUCTS}!A2:O`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return all[idx];
+    });
+  }
+
+  // ✅ DB-first update
+  const updated = await prisma.businessProduct.update({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: productId,
+      },
+    },
+    data: {
+      ...updates,
+      updatedAt: new Date(),
+      lastSyncedAt: null,
+      syncStatus: "PENDING",
+    },
+  });
+
+  enqueueProductSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  return dbRowToProduct(updated);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function deleteProduct(
   userId: string,
   spreadsheetId: string,
-  productId: string
+  productId: string,
 ): Promise<void> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-
-    // ── Read directly, no queue, no cache ──
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.PRODUCTS,
-    });
-    const all = sheetRowsToObjects(
-      res.data.values as string[][] | null,
-      HEADERS.PRODUCTS
-    ) as Product[];
-
-    const filtered = all.filter(p => p.id !== productId);
-    if (filtered.length === all.length) throw new Error('Product not found');
-    const values = objectsToSheetRows(filtered, HEADERS.PRODUCTS);
-    const padded = padValues(values, HEADERS.PRODUCTS.length, all.length);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.PRODUCTS}!A2:O`,
-      valueInputOption: 'RAW',
-      requestBody: { values: padded },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.PRODUCTS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.PRODUCTS,
+      ) as Product[];
+      const filtered = all.filter((p) => p.id !== productId);
+      if (filtered.length === all.length) throw new Error("Product not found");
+      const values = objectsToSheetRows(filtered, HEADERS.PRODUCTS);
+      const padded = padValues(values, HEADERS.PRODUCTS.length, all.length);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.PRODUCTS}!A2:O`,
+        valueInputOption: "RAW",
+        requestBody: { values: padded },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+    });
+  }
+
+  // ✅ DB-first delete
+  await prisma.businessProduct.delete({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: productId,
+      },
+    },
+  });
+
+  // Non-blocking sheet sync
+  enqueueProductDeleteSync(userId, spreadsheetId, productId);
+  await invalidateSpreadsheetCache(spreadsheetId);
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRIVATE mapper (add once, near top of product section)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function dbRowToProduct(r: {
+  id: string;
+  name: string;
+  sku: string | null;
+  category: string | null;
+  description: string | null;
+  costPrice: number;
+  sellingPrice: number;
+  stock: number;
+  minStock: number;
+  unit: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  imageUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Product {
+  return {
+    id: r.id,
+    name: r.name,
+    sku: r.sku,
+    category: r.category,
+    description: r.description,
+    costPrice: r.costPrice,
+    sellingPrice: r.sellingPrice,
+    stock: r.stock,
+    minStock: r.minStock,
+    unit: r.unit,
+    supplierId: r.supplierId,
+    supplierName: r.supplierName,
+    imageUrl: r.imageUrl,
+    createdAt: r.createdAt.toISOString(),
+    updatedAt: r.updatedAt.toISOString(),
+  };
+}
+
 // ─── Internal: deduct stock (called inside queueWriteRequest) ─────────────────
 
 async function _rawDeductStock(
   userId: string,
   spreadsheetId: string,
-  items: Array<{ productId: string; quantity: number }>
+  items: Array<{ productId: string; quantity: number }>,
 ): Promise<void> {
   // ── await makeSheetClient ──
   const sheets = await makeSheetClient(userId);
@@ -706,11 +1240,11 @@ async function _rawDeductStock(
   });
   const all = sheetRowsToObjects(
     res.data.values as string[][] | null,
-    HEADERS.PRODUCTS
+    HEADERS.PRODUCTS,
   ) as Product[];
 
   for (const item of items) {
-    const idx = all.findIndex(p => p.id === item.productId);
+    const idx = all.findIndex((p) => p.id === item.productId);
     if (idx !== -1) {
       all[idx] = {
         ...all[idx],
@@ -724,7 +1258,7 @@ async function _rawDeductStock(
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${TABS.PRODUCTS}!A2:O`,
-    valueInputOption: 'RAW',
+    valueInputOption: "RAW",
     requestBody: { values },
   });
 }
@@ -732,7 +1266,7 @@ async function _rawDeductStock(
 async function _rawRestoreStock(
   userId: string,
   spreadsheetId: string,
-  items: Array<{ productId: string; quantity: number }>
+  items: Array<{ productId: string; quantity: number }>,
 ): Promise<void> {
   // ── await makeSheetClient ──
   const sheets = await makeSheetClient(userId);
@@ -742,11 +1276,11 @@ async function _rawRestoreStock(
   });
   const all = sheetRowsToObjects(
     res.data.values as string[][] | null,
-    HEADERS.PRODUCTS
+    HEADERS.PRODUCTS,
   ) as Product[];
 
   for (const item of items) {
-    const idx = all.findIndex(p => p.id === item.productId);
+    const idx = all.findIndex((p) => p.id === item.productId);
     if (idx !== -1) {
       all[idx] = {
         ...all[idx],
@@ -760,7 +1294,7 @@ async function _rawRestoreStock(
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: `${TABS.PRODUCTS}!A2:O`,
-    valueInputOption: 'RAW',
+    valueInputOption: "RAW",
     requestBody: { values },
   });
 }
@@ -776,21 +1310,65 @@ export interface Customer {
   email: string | null;
   address: string | null;
   city: string | null;
-  customerType: 'WALK_IN' | 'ONLINE';
+  customerType: "WALK_IN" | "ONLINE";
   notes: string | null;
   createdAt: string;
 }
 
+function dbRowToCustomer(r: {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  city: string | null;
+  customerType: string;
+  notes: string | null;
+  createdAt: Date;
+}): Customer {
+  return {
+    id: r.id,
+    name: r.name,
+    phone: r.phone,
+    email: r.email,
+    address: r.address,
+    city: r.city,
+    customerType: r.customerType as "WALK_IN" | "ONLINE",
+    notes: r.notes,
+    createdAt: r.createdAt.toISOString(),
+  };
+}
+
 export async function getCustomers(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Customer[]> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.CUSTOMERS, spreadsheetId, 'biz-customers');
+  const cacheKey = getCacheKey(
+    CACHE_PREFIX.CUSTOMERS,
+    spreadsheetId,
+    "biz-customers",
+  );
+
   return getOrFetch(
     cacheKey,
     async () => {
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
+
+      if (connection) {
+        const dbRows = await prisma.businessCustomer.findMany({
+          where: {
+            sheetConnectionId: connection.id,
+            externalSheetId: spreadsheetId,
+          },
+          orderBy: { createdAt: "asc" },
+        });
+        return dbRows.map(dbRowToCustomer);
+      }
+
       const data = await queueReadRequest(userId, async () => {
-        // ── await makeSheetClient ──
         const sheets = await makeSheetClient(userId);
         const res = await sheets.spreadsheets.values.get({
           spreadsheetId,
@@ -800,82 +1378,184 @@ export async function getCustomers(
       });
       return sheetRowsToObjects(data, HEADERS.CUSTOMERS) as Customer[];
     },
-    CACHE_TTL.CUSTOMERS
+    CACHE_TTL.CUSTOMERS,
   );
 }
 
 export async function createCustomer(
   userId: string,
   spreadsheetId: string,
-  input: Omit<Customer, 'id' | 'createdAt'>
+  input: Omit<Customer, "id" | "createdAt">,
 ): Promise<Customer> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.CUSTOMERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
-    const newCustomer: Customer = {
-      id: generateId('CUST', all),
-      createdAt: new Date().toISOString(),
-      ...input,
-    };
-    const values = objectsToSheetRows([newCustomer], HEADERS.CUSTOMERS);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${TABS.CUSTOMERS}!A:I`,
-      valueInputOption: 'RAW', requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return newCustomer;
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.CUSTOMERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.CUSTOMERS,
+      ) as Customer[];
+      const newCustomer: Customer = {
+        id: generateId("CUST", all),
+        createdAt: new Date().toISOString(),
+        ...input,
+      };
+      const values = objectsToSheetRows([newCustomer], HEADERS.CUSTOMERS);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${TABS.CUSTOMERS}!A:I`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return newCustomer;
+    });
+  }
+
+  const lastCustomer = await prisma.businessCustomer.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const nextId = generateId(
+    "CUST",
+    lastCustomer ? [{ id: lastCustomer.id }] : [],
+  );
+
+  const created = await prisma.businessCustomer.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      name: input.name,
+      phone: input.phone,
+      email: input.email,
+      address: input.address,
+      city: input.city,
+      customerType: input.customerType,
+      notes: input.notes,
+      createdAt: new Date(),
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  enqueueCustomerSync(userId, spreadsheetId, created.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToCustomer(created);
 }
 
 export async function updateCustomer(
   userId: string,
   spreadsheetId: string,
   customerId: string,
-  updates: Partial<Omit<Customer, 'id' | 'createdAt'>>
+  updates: Partial<Omit<Customer, "id" | "createdAt">>,
 ): Promise<Customer> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.CUSTOMERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
-    const idx = all.findIndex(c => c.id === customerId);
-    if (idx === -1) throw new Error('Customer not found');
-    all[idx] = { ...all[idx], ...updates };
-    const values = objectsToSheetRows(all, HEADERS.CUSTOMERS);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId, range: `${TABS.CUSTOMERS}!A2:I`,
-      valueInputOption: 'RAW', requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return all[idx];
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.CUSTOMERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.CUSTOMERS,
+      ) as Customer[];
+      const idx = all.findIndex((c) => c.id === customerId);
+      if (idx === -1) throw new Error("Customer not found");
+      all[idx] = { ...all[idx], ...updates };
+      const values = objectsToSheetRows(all, HEADERS.CUSTOMERS);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.CUSTOMERS}!A2:I`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return all[idx];
+    });
+  }
+
+  const updated = await prisma.businessCustomer.update({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: customerId,
+      },
+    },
+    data: {
+      ...updates,
+      updatedAt: new Date(),
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  enqueueCustomerSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToCustomer(updated);
 }
 
 export async function deleteCustomer(
   userId: string,
   spreadsheetId: string,
-  customerId: string
+  customerId: string,
 ): Promise<void> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
-    const res = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.CUSTOMERS,
-    });
-    const all = sheetRowsToObjects(res.data.values as string[][] | null, HEADERS.CUSTOMERS) as Customer[];
-    const filtered = all.filter(c => c.id !== customerId);
-    if (filtered.length === all.length) throw new Error('Customer not found');
-    const values = objectsToSheetRows(filtered, HEADERS.CUSTOMERS);
-    const padded = padValues(values, HEADERS.CUSTOMERS.length, all.length);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId, range: `${TABS.CUSTOMERS}!A2:I`,
-      valueInputOption: 'RAW', requestBody: { values: padded },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
   });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const res = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.CUSTOMERS,
+      });
+      const all = sheetRowsToObjects(
+        res.data.values as string[][] | null,
+        HEADERS.CUSTOMERS,
+      ) as Customer[];
+      const filtered = all.filter((c) => c.id !== customerId);
+      if (filtered.length === all.length) throw new Error("Customer not found");
+      const values = objectsToSheetRows(filtered, HEADERS.CUSTOMERS);
+      const padded = padValues(values, HEADERS.CUSTOMERS.length, all.length);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.CUSTOMERS}!A2:I`,
+        valueInputOption: "RAW",
+        requestBody: { values: padded },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+    });
+  }
+
+  await prisma.businessCustomer.delete({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: customerId,
+      },
+    },
+  });
+
+  enqueueCustomerDeleteSync(userId, spreadsheetId, customerId);
+  await invalidateSpreadsheetCache(spreadsheetId);
 }
 
 // ═══════════════════════════════════════════════════
@@ -909,29 +1589,118 @@ export interface Purchase {
   total: number;
   amountPaid: number;
   amountDue: number;
-  status: 'PAID' | 'PARTIAL' | 'UNPAID';
+  status: "PAID" | "PARTIAL" | "UNPAID";
   imageUrl: string | null;
   notes: string | null;
   createdAt: string;
   items?: PurchaseItem[];
 }
 
+function dbRowToPurchase(r: any): Purchase {
+  return {
+    id: r.id,
+    invoiceNumber: r.invoiceNumber,
+    date: r.date,
+    supplierId: r.supplierId,
+    supplierName: r.supplierName,
+    subtotal: r.subtotal,
+    taxPercent: r.taxPercent,
+    taxAmount: r.taxAmount,
+    transportCost: r.transportCost,
+    customsCost: r.customsCost,
+    storageCost: r.storageCost,
+    otherExpenses: r.otherExpenses,
+    landedCost: r.landedCost,
+    total: r.total,
+    amountPaid: r.amountPaid,
+    amountDue: r.amountDue,
+    status: r.status as Purchase["status"],
+    imageUrl: r.imageUrl,
+    notes: r.notes,
+    createdAt:
+      r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    items: r.items?.map((i: any) => ({
+      id: i.id,
+      purchaseId: i.purchaseId,
+      productId: i.productId,
+      productName: i.productName,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      total: i.total,
+    })),
+  };
+}
+
+function dbRowToSale(r: any): Sale {
+  return {
+    id: r.id,
+    invoiceNumber: r.invoiceNumber,
+    date: r.date,
+    customerId: r.customerId,
+    customerName: r.customerName,
+    subtotal: r.subtotal,
+    discountType: r.discountType as Sale["discountType"],
+    discountValue: r.discountValue,
+    discountAmount: r.discountAmount,
+    taxPercent: r.taxPercent,
+    taxAmount: r.taxAmount,
+    total: r.total,
+    amountPaid: r.amountPaid,
+    amountDue: r.amountDue,
+    paymentMethod: r.paymentMethod,
+    status: r.status as Sale["status"],
+    notes: r.notes,
+    createdAt:
+      r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    items: r.items?.map((i: any) => ({
+      id: i.id,
+      saleId: i.saleId,
+      productId: i.productId,
+      productName: i.productName,
+      variation: i.variation,
+      quantity: i.quantity,
+      unitPrice: i.unitPrice,
+      total: i.total,
+    })),
+  };
+}
+
+// ─── PURCHASES ────────────────────────────────────────────────────────────────
+
 export async function getPurchases(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Purchase[]> {
   const cacheKey = getCacheKey(
     CACHE_PREFIX.TRANSACTIONS,
     spreadsheetId,
-    'biz-purchases'
+    "biz-purchases",
   );
+
   return getOrFetch(
     cacheKey,
     async () => {
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
+
+      if (connection) {
+        const dbRows = await prisma.businessPurchase.findMany({
+          where: {
+            sheetConnectionId: connection.id,
+            externalSheetId: spreadsheetId,
+          },
+          include: { items: true },
+          orderBy: { createdAt: "asc" },
+        });
+        return dbRows.map(dbRowToPurchase);
+      }
+
+      // Fallback
       const [purchaseData, itemData] = await queueReadRequest(
         userId,
         async () => {
-          // ── await makeSheetClient ──
           const sheets = await makeSheetClient(userId);
           const [pRes, iRes] = await Promise.all([
             sheets.spreadsheets.values.get({
@@ -947,169 +1716,336 @@ export async function getPurchases(
             pRes.data.values as string[][],
             iRes.data.values as string[][],
           ];
-        }
+        },
       );
-
       const purchases = sheetRowsToObjects(
         purchaseData,
-        HEADERS.PURCHASES
+        HEADERS.PURCHASES,
       ) as Purchase[];
       const items = sheetRowsToObjects(
         itemData,
-        HEADERS.PURCHASE_ITEMS
+        HEADERS.PURCHASE_ITEMS,
       ) as PurchaseItem[];
-
-      return purchases.map(p => ({
+      return purchases.map((p) => ({
         ...p,
-        items: items.filter(i => i.purchaseId === p.id),
+        items: items.filter((i) => i.purchaseId === p.id),
       }));
     },
-    CACHE_TTL.TRANSACTIONS
+    CACHE_TTL.TRANSACTIONS,
   );
 }
 
 export async function createPurchase(
   userId: string,
   spreadsheetId: string,
-  input: Omit<Purchase, 'id' | 'invoiceNumber' | 'createdAt'> & {
-    items: Omit<PurchaseItem, 'id' | 'purchaseId'>[];
-  }
+  input: Omit<Purchase, "id" | "invoiceNumber" | "createdAt"> & {
+    items: Omit<PurchaseItem, "id" | "purchaseId">[];
+  },
 ): Promise<Purchase> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
 
-    // Read directly
-    const pRes = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.PURCHASES,
-    });
-    const allPurchases = sheetRowsToObjects(
-      pRes.data.values as string[][] | null, HEADERS.PURCHASES
-    ) as Purchase[];
-
-    const newPurchase: Purchase = {
-      id: generateId('PUR', allPurchases),
-      invoiceNumber: generateInvoiceNumber('PUR', allPurchases),
-      createdAt: new Date().toISOString(),
-      ...input,
-      items: undefined,
-    };
-
-    const purchaseValues = objectsToSheetRows([newPurchase], HEADERS.PURCHASES);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${TABS.PURCHASES}!A:T`,
-      valueInputOption: 'RAW', requestBody: { values: purchaseValues },
-    });
-
-    if (input.items?.length > 0) {
-      const purchaseItems: PurchaseItem[] = input.items.map((item, i) => ({
-        id: `PI_${newPurchase.id}_${i + 1}`,
-        purchaseId: newPurchase.id,
-        ...item,
-      }));
-      const itemValues = objectsToSheetRows(purchaseItems, HEADERS.PURCHASE_ITEMS);
-      await sheets.spreadsheets.values.append({
-        spreadsheetId, range: `${TABS.PURCHASE_ITEMS}!A:G`,
-        valueInputOption: 'RAW', requestBody: { values: itemValues },
+  if (!connection) {
+    // Old fallback
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const pRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.PURCHASES,
       });
-      await _rawRestoreStock(userId, spreadsheetId, purchaseItems);
-      newPurchase.items = purchaseItems;
+      const allPurchases = sheetRowsToObjects(
+        pRes.data.values as string[][] | null,
+        HEADERS.PURCHASES,
+      ) as Purchase[];
+      const newPurchase: Purchase = {
+        id: generateId("PUR", allPurchases),
+        invoiceNumber: generateInvoiceNumber("PUR", allPurchases),
+        createdAt: new Date().toISOString(),
+        ...input,
+        items: undefined,
+      };
+      const purchaseValues = objectsToSheetRows(
+        [newPurchase],
+        HEADERS.PURCHASES,
+      );
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${TABS.PURCHASES}!A:T`,
+        valueInputOption: "RAW",
+        requestBody: { values: purchaseValues },
+      });
+      if (input.items?.length > 0) {
+        const purchaseItems: PurchaseItem[] = input.items.map((item, i) => ({
+          id: `PI_${newPurchase.id}_${i + 1}`,
+          purchaseId: newPurchase.id,
+          ...item,
+        }));
+        const itemValues = objectsToSheetRows(
+          purchaseItems,
+          HEADERS.PURCHASE_ITEMS,
+        );
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${TABS.PURCHASE_ITEMS}!A:G`,
+          valueInputOption: "RAW",
+          requestBody: { values: itemValues },
+        });
+        await _rawRestoreStock(userId, spreadsheetId, purchaseItems);
+        newPurchase.items = purchaseItems;
+      }
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return newPurchase;
+    });
+  }
+
+  // DB-first
+  const lastPurchase = await prisma.businessPurchase.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const nextId = generateId(
+    "PUR",
+    lastPurchase ? [{ id: lastPurchase.id }] : [],
+  );
+
+  const allPurchases = await prisma.businessPurchase.findMany({
+    where: { sheetConnectionId: connection.id },
+    select: { id: true },
+  });
+  const invoiceNumber = generateInvoiceNumber("PUR", allPurchases);
+
+  const now = new Date();
+  const created = await prisma.businessPurchase.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      invoiceNumber,
+      date: input.date,
+      supplierId: input.supplierId,
+      supplierName: input.supplierName,
+      subtotal: input.subtotal,
+      taxPercent: input.taxPercent,
+      taxAmount: input.taxAmount,
+      transportCost: input.transportCost,
+      customsCost: input.customsCost,
+      storageCost: input.storageCost,
+      otherExpenses: input.otherExpenses,
+      landedCost: input.landedCost,
+      total: input.total,
+      amountPaid: input.amountPaid,
+      amountDue: input.amountDue,
+      status: input.status,
+      imageUrl: input.imageUrl,
+      notes: input.notes,
+      createdAt: now,
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  let dbItems: any[] = [];
+  if (input.items?.length > 0) {
+    const purchaseItems = input.items.map((item, i) => ({
+      id: `PI_${created.id}_${i + 1}`,
+      purchaseId: created.id,
+      productId: item.productId,
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      total: item.total,
+    }));
+
+    await prisma.businessPurchaseItem.createMany({ data: purchaseItems });
+
+    // Update stock in DB (restore = add stock for purchases)
+    for (const item of purchaseItems) {
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { increment: item.quantity }, syncStatus: "PENDING" },
+      });
     }
 
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return newPurchase;
+    dbItems = purchaseItems;
+  }
+
+  enqueuePurchaseSync(userId, spreadsheetId, created.id);
+  // Also sync stock changes for affected products
+  if (dbItems.length > 0) {
+    for (const item of dbItems) {
+      enqueueProductSync(userId, spreadsheetId, item.productId);
+    }
+  }
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  const result = await prisma.businessPurchase.findUnique({
+    where: { id: created.id },
+    include: { items: true },
   });
+  return dbRowToPurchase(result!);
 }
 
 export async function updatePurchaseStatus(
   userId: string,
   spreadsheetId: string,
   purchaseId: string,
-  status: Purchase['status'],
-  amountPaid: number
+  status: Purchase["status"],
+  amountPaid: number,
 ): Promise<Purchase> {
-  return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
-    const sheets = await makeSheetClient(userId);
-    const all = await getPurchases(userId, spreadsheetId);
-    const idx = all.findIndex(p => p.id === purchaseId);
-    if (idx === -1) throw new Error('Purchase not found');
-    all[idx] = {
-      ...all[idx],
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const all = await getPurchases(userId, spreadsheetId);
+      const idx = all.findIndex((p) => p.id === purchaseId);
+      if (idx === -1) throw new Error("Purchase not found");
+      all[idx] = {
+        ...all[idx],
+        status,
+        amountPaid,
+        amountDue: all[idx].total - amountPaid,
+        items: undefined,
+      };
+      const values = objectsToSheetRows(all, HEADERS.PURCHASES);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `${TABS.PURCHASES}!A2:T`,
+        valueInputOption: "RAW",
+        requestBody: { values },
+      });
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return all[idx];
+    });
+  }
+
+  const existing = await prisma.businessPurchase.findUnique({
+    where: { id: purchaseId },
+    include: { items: true },
+  });
+  if (!existing) throw new Error("Purchase not found");
+
+  const updated = await prisma.businessPurchase.update({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: purchaseId,
+      },
+    },
+    data: {
       status,
       amountPaid,
-      amountDue: all[idx].total - amountPaid,
-      items: undefined,
-    };
-    const values = objectsToSheetRows(all, HEADERS.PURCHASES);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.PURCHASES}!A2:T`,
-      valueInputOption: 'RAW',
-      requestBody: { values },
-    });
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return all[idx];
+      amountDue: existing.total - amountPaid,
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+    include: { items: true },
   });
+
+  enqueuePurchaseSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToPurchase(updated);
 }
 
 export async function deletePurchase(
   userId: string,
   spreadsheetId: string,
-  purchaseId: string
+  purchaseId: string,
 ): Promise<void> {
-  return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
-    const sheets = await makeSheetClient(userId);
-    const all = await getPurchases(userId, spreadsheetId);
-    const purchase = all.find(p => p.id === purchaseId);
-    if (!purchase) throw new Error('Purchase not found');
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
 
-    const filtered = all.filter(p => p.id !== purchaseId);
-    const purchaseValues = objectsToSheetRows(filtered, HEADERS.PURCHASES);
-    const padded = padValues(
-      purchaseValues,
-      HEADERS.PURCHASES.length,
-      all.length
-    );
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.PURCHASES}!A2:T`,
-      valueInputOption: 'RAW',
-      requestBody: { values: padded },
-    });
-
-    const iRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.PURCHASE_ITEMS,
-    });
-    const allItems = sheetRowsToObjects(
-      iRes.data.values as string[][] | null,
-      HEADERS.PURCHASE_ITEMS
-    ) as PurchaseItem[];
-    const toRemove = allItems.filter(i => i.purchaseId === purchaseId);
-    const remainingItems = allItems.filter(i => i.purchaseId !== purchaseId);
-
-    if (toRemove.length > 0) {
-      await _rawDeductStock(userId, spreadsheetId, toRemove);
-      const itemValues = objectsToSheetRows(
-        remainingItems,
-        HEADERS.PURCHASE_ITEMS
-      );
-      const paddedItems = padValues(
-        itemValues,
-        HEADERS.PURCHASE_ITEMS.length,
-        allItems.length
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const all = await getPurchases(userId, spreadsheetId);
+      const purchase = all.find((p) => p.id === purchaseId);
+      if (!purchase) throw new Error("Purchase not found");
+      const filtered = all.filter((p) => p.id !== purchaseId);
+      const purchaseValues = objectsToSheetRows(filtered, HEADERS.PURCHASES);
+      const padded = padValues(
+        purchaseValues,
+        HEADERS.PURCHASES.length,
+        all.length,
       );
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${TABS.PURCHASE_ITEMS}!A2:G`,
-        valueInputOption: 'RAW',
-        requestBody: { values: paddedItems },
+        range: `${TABS.PURCHASES}!A2:T`,
+        valueInputOption: "RAW",
+        requestBody: { values: padded },
       });
-    }
+      const iRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.PURCHASE_ITEMS,
+      });
+      const allItems = sheetRowsToObjects(
+        iRes.data.values as string[][] | null,
+        HEADERS.PURCHASE_ITEMS,
+      ) as PurchaseItem[];
+      const toRemove = allItems.filter((i) => i.purchaseId === purchaseId);
+      const remainingItems = allItems.filter(
+        (i) => i.purchaseId !== purchaseId,
+      );
+      if (toRemove.length > 0) {
+        await _rawDeductStock(userId, spreadsheetId, toRemove);
+        const itemValues = objectsToSheetRows(
+          remainingItems,
+          HEADERS.PURCHASE_ITEMS,
+        );
+        const paddedItems = padValues(
+          itemValues,
+          HEADERS.PURCHASE_ITEMS.length,
+          allItems.length,
+        );
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${TABS.PURCHASE_ITEMS}!A2:G`,
+          valueInputOption: "RAW",
+          requestBody: { values: paddedItems },
+        });
+      }
+      await invalidateSpreadsheetCache(spreadsheetId);
+    });
+  }
 
-    await invalidateSpreadsheetCache(spreadsheetId);
+  // Get items before deleting (for stock reversal)
+  const purchase = await prisma.businessPurchase.findUnique({
+    where: { id: purchaseId },
+    include: { items: true },
   });
+  if (!purchase) throw new Error("Purchase not found");
+
+  // Reverse stock (deduct — because purchase added stock)
+  for (const item of purchase.items) {
+    await prisma.businessProduct.updateMany({
+      where: { sheetConnectionId: connection.id, id: item.productId },
+      data: { stock: { decrement: item.quantity }, syncStatus: "PENDING" },
+    });
+  }
+
+  // Delete cascade handles items
+  await prisma.businessPurchase.delete({
+    where: {
+      sheetConnectionId_id: {
+        sheetConnectionId: connection.id,
+        id: purchaseId,
+      },
+    },
+  });
+
+  enqueuePurchaseDeleteSync(userId, spreadsheetId, purchaseId);
+  for (const item of purchase.items) {
+    enqueueProductSync(userId, spreadsheetId, item.productId);
+  }
+  await invalidateSpreadsheetCache(spreadsheetId);
 }
 
 // ═══════════════════════════════════════════════════
@@ -1134,7 +2070,7 @@ export interface Sale {
   customerId: string | null;
   customerName: string | null;
   subtotal: number;
-  discountType: 'PERCENT' | 'FIXED' | null;
+  discountType: "PERCENT" | "FIXED" | null;
   discountValue: number;
   discountAmount: number;
   taxPercent: number;
@@ -1143,7 +2079,7 @@ export interface Sale {
   amountPaid: number;
   amountDue: number;
   paymentMethod: string | null;
-  status: 'PAID' | 'PARTIAL' | 'UNPAID';
+  status: "PAID" | "PARTIAL" | "UNPAID";
   notes: string | null;
   createdAt: string;
   items?: SaleItem[];
@@ -1151,155 +2087,286 @@ export interface Sale {
 
 export async function getSales(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Sale[]> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.SALES, spreadsheetId, 'biz-sales');
+  const cacheKey = getCacheKey(CACHE_PREFIX.SALES, spreadsheetId, "biz-sales");
+
   return getOrFetch(
     cacheKey,
     async () => {
-      const [saleData, itemData] = await queueReadRequest(
-        userId,
-        async () => {
-          // ── await makeSheetClient ──
-          const sheets = await makeSheetClient(userId);
-          const [sRes, iRes] = await Promise.all([
-            sheets.spreadsheets.values.get({
-              spreadsheetId,
-              range: RANGES.SALES,
-            }),
-            sheets.spreadsheets.values.get({
-              spreadsheetId,
-              range: RANGES.SALE_ITEMS,
-            }),
-          ]);
-          return [
-            sRes.data.values as string[][],
-            iRes.data.values as string[][],
-          ];
-        }
-      );
+      const connection = await prisma.sheetConnection.findFirst({
+        where: { userId, spreadsheetId, isActive: true },
+        select: { id: true },
+      });
 
+      if (connection) {
+        const dbRows = await prisma.businessSale.findMany({
+          where: {
+            sheetConnectionId: connection.id,
+            externalSheetId: spreadsheetId,
+          },
+          include: { items: true },
+          orderBy: { createdAt: "asc" },
+        });
+        return dbRows.map(dbRowToSale);
+      }
+
+      // Fallback
+      const [saleData, itemData] = await queueReadRequest(userId, async () => {
+        const sheets = await makeSheetClient(userId);
+        const [sRes, iRes] = await Promise.all([
+          sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: RANGES.SALES,
+          }),
+          sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: RANGES.SALE_ITEMS,
+          }),
+        ]);
+        return [sRes.data.values as string[][], iRes.data.values as string[][]];
+      });
       const sales = sheetRowsToObjects(saleData, HEADERS.SALES) as Sale[];
       const items = sheetRowsToObjects(
         itemData,
-        HEADERS.SALE_ITEMS
+        HEADERS.SALE_ITEMS,
       ) as SaleItem[];
-
-      return sales.map(s => ({
+      return sales.map((s) => ({
         ...s,
-        items: items.filter(i => i.saleId === s.id),
+        items: items.filter((i) => i.saleId === s.id),
       }));
     },
-    CACHE_TTL.SALES
+    CACHE_TTL.SALES,
   );
 }
 
 export async function createSale(
   userId: string,
   spreadsheetId: string,
-  input: Omit<Sale, 'id' | 'invoiceNumber' | 'createdAt'> & {
-    items: Omit<SaleItem, 'id' | 'saleId'>[];
-  }
+  input: Omit<Sale, "id" | "invoiceNumber" | "createdAt"> & {
+    items: Omit<SaleItem, "id" | "saleId">[];
+  },
 ): Promise<Sale> {
-  return queueWriteRequest(userId, async () => {
-    const sheets = await makeSheetClient(userId);
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
 
-    // Read directly
-    const sRes = await sheets.spreadsheets.values.get({
-      spreadsheetId, range: RANGES.SALES,
-    });
-    const allSales = sheetRowsToObjects(
-      sRes.data.values as string[][] | null, HEADERS.SALES
-    ) as Sale[];
-
-    const newSale: Sale = {
-      id: generateId('SAL', allSales),
-      invoiceNumber: generateInvoiceNumber('INV', allSales),
-      createdAt: new Date().toISOString(),
-      ...input,
-      items: undefined,
-    };
-
-    const saleValues = objectsToSheetRows([newSale], HEADERS.SALES);
-    await sheets.spreadsheets.values.append({
-      spreadsheetId, range: `${TABS.SALES}!A:S`,
-      valueInputOption: 'RAW', requestBody: { values: saleValues },
-    });
-
-    if (input.items?.length > 0) {
-      const saleItems: SaleItem[] = input.items.map((item, i) => ({
-        id: `SI_${newSale.id}_${i + 1}`,
-        saleId: newSale.id,
-        ...item,
-      }));
-      const itemValues = objectsToSheetRows(saleItems, HEADERS.SALE_ITEMS);
-      await sheets.spreadsheets.values.append({
-        spreadsheetId, range: `${TABS.SALE_ITEMS}!A:H`,
-        valueInputOption: 'RAW', requestBody: { values: itemValues },
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const sRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.SALES,
       });
-      await _rawDeductStock(userId, spreadsheetId, saleItems);
-      newSale.items = saleItems;
+      const allSales = sheetRowsToObjects(
+        sRes.data.values as string[][] | null,
+        HEADERS.SALES,
+      ) as Sale[];
+      const newSale: Sale = {
+        id: generateId("SAL", allSales),
+        invoiceNumber: generateInvoiceNumber("INV", allSales),
+        createdAt: new Date().toISOString(),
+        ...input,
+        items: undefined,
+      };
+      const saleValues = objectsToSheetRows([newSale], HEADERS.SALES);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${TABS.SALES}!A:S`,
+        valueInputOption: "RAW",
+        requestBody: { values: saleValues },
+      });
+      if (input.items?.length > 0) {
+        const saleItems: SaleItem[] = input.items.map((item, i) => ({
+          id: `SI_${newSale.id}_${i + 1}`,
+          saleId: newSale.id,
+          ...item,
+        }));
+        const itemValues = objectsToSheetRows(saleItems, HEADERS.SALE_ITEMS);
+        await sheets.spreadsheets.values.append({
+          spreadsheetId,
+          range: `${TABS.SALE_ITEMS}!A:H`,
+          valueInputOption: "RAW",
+          requestBody: { values: itemValues },
+        });
+        await _rawDeductStock(userId, spreadsheetId, saleItems);
+        newSale.items = saleItems;
+      }
+      await invalidateSpreadsheetCache(spreadsheetId);
+      return newSale;
+    });
+  }
+
+  // DB-first
+  const lastSale = await prisma.businessSale.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+  });
+  const nextId = generateId("SAL", lastSale ? [{ id: lastSale.id }] : []);
+
+  const allSales = await prisma.businessSale.findMany({
+    where: { sheetConnectionId: connection.id },
+    select: { id: true },
+  });
+  const invoiceNumber = generateInvoiceNumber("INV", allSales);
+
+  const now = new Date();
+  const created = await prisma.businessSale.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      invoiceNumber,
+      date: input.date,
+      customerId: input.customerId,
+      customerName: input.customerName,
+      subtotal: input.subtotal,
+      discountType: input.discountType,
+      discountValue: input.discountValue,
+      discountAmount: input.discountAmount,
+      taxPercent: input.taxPercent,
+      taxAmount: input.taxAmount,
+      total: input.total,
+      amountPaid: input.amountPaid,
+      amountDue: input.amountDue,
+      paymentMethod: input.paymentMethod,
+      status: input.status,
+      notes: input.notes,
+      createdAt: now,
+      syncStatus: "PENDING",
+      lastSyncedAt: null,
+    },
+  });
+
+  let dbItems: any[] = [];
+  if (input.items?.length > 0) {
+    const saleItems = input.items.map((item, i) => ({
+      id: `SI_${created.id}_${i + 1}`,
+      saleId: created.id,
+      productId: item.productId,
+      productName: item.productName,
+      variation: item.variation ?? null,
+      quantity: item.quantity,
+      unitPrice: item.unitPrice,
+      total: item.total,
+    }));
+
+    await prisma.businessSaleItem.createMany({ data: saleItems });
+
+    // Deduct stock in DB (sales reduce stock)
+    for (const item of saleItems) {
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { decrement: item.quantity }, syncStatus: "PENDING" },
+      });
     }
 
-    await invalidateSpreadsheetCache(spreadsheetId);
-    return newSale;
+    dbItems = saleItems;
+  }
+
+  enqueueSaleSync(userId, spreadsheetId, created.id);
+  if (dbItems.length > 0) {
+    for (const item of dbItems) {
+      enqueueProductSync(userId, spreadsheetId, item.productId);
+    }
+  }
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  const result = await prisma.businessSale.findUnique({
+    where: { id: created.id },
+    include: { items: true },
   });
+  return dbRowToSale(result!);
 }
 
 export async function deleteSale(
   userId: string,
   spreadsheetId: string,
-  saleId: string
+  saleId: string,
 ): Promise<void> {
-  return queueWriteRequest(userId, async () => {
-    // ── await makeSheetClient ──
-    const sheets = await makeSheetClient(userId);
-    const allSales = await getSales(userId, spreadsheetId);
-    const sale = allSales.find(s => s.id === saleId);
-    if (!sale) throw new Error('Sale not found');
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
 
-    const filtered = allSales.filter(s => s.id !== saleId);
-    const saleValues = objectsToSheetRows(filtered, HEADERS.SALES);
-    const padded = padValues(saleValues, HEADERS.SALES.length, allSales.length);
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${TABS.SALES}!A2:S`,
-      valueInputOption: 'RAW',
-      requestBody: { values: padded },
-    });
-
-    const iRes = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: RANGES.SALE_ITEMS,
-    });
-    const allItems = sheetRowsToObjects(
-      iRes.data.values as string[][] | null,
-      HEADERS.SALE_ITEMS
-    ) as SaleItem[];
-    const toRestore = allItems.filter(i => i.saleId === saleId);
-    const remainingItems = allItems.filter(i => i.saleId !== saleId);
-
-    if (toRestore.length > 0) {
-      await _rawRestoreStock(userId, spreadsheetId, toRestore);
-      const itemValues = objectsToSheetRows(
-        remainingItems,
-        HEADERS.SALE_ITEMS
-      );
-      const paddedItems = padValues(
-        itemValues,
-        HEADERS.SALE_ITEMS.length,
-        allItems.length
+  if (!connection) {
+    return queueWriteRequest(userId, async () => {
+      const sheets = await makeSheetClient(userId);
+      const allSales = await getSales(userId, spreadsheetId);
+      const sale = allSales.find((s) => s.id === saleId);
+      if (!sale) throw new Error("Sale not found");
+      const filtered = allSales.filter((s) => s.id !== saleId);
+      const saleValues = objectsToSheetRows(filtered, HEADERS.SALES);
+      const padded = padValues(
+        saleValues,
+        HEADERS.SALES.length,
+        allSales.length,
       );
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: `${TABS.SALE_ITEMS}!A2:H`,
-        valueInputOption: 'RAW',
-        requestBody: { values: paddedItems },
+        range: `${TABS.SALES}!A2:S`,
+        valueInputOption: "RAW",
+        requestBody: { values: padded },
       });
-    }
+      const iRes = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: RANGES.SALE_ITEMS,
+      });
+      const allItems = sheetRowsToObjects(
+        iRes.data.values as string[][] | null,
+        HEADERS.SALE_ITEMS,
+      ) as SaleItem[];
+      const toRestore = allItems.filter((i) => i.saleId === saleId);
+      const remainingItems = allItems.filter((i) => i.saleId !== saleId);
+      if (toRestore.length > 0) {
+        await _rawRestoreStock(userId, spreadsheetId, toRestore);
+        const itemValues = objectsToSheetRows(
+          remainingItems,
+          HEADERS.SALE_ITEMS,
+        );
+        const paddedItems = padValues(
+          itemValues,
+          HEADERS.SALE_ITEMS.length,
+          allItems.length,
+        );
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: `${TABS.SALE_ITEMS}!A2:H`,
+          valueInputOption: "RAW",
+          requestBody: { values: paddedItems },
+        });
+      }
+      await invalidateSpreadsheetCache(spreadsheetId);
+    });
+  }
 
-    await invalidateSpreadsheetCache(spreadsheetId);
+  const sale = await prisma.businessSale.findUnique({
+    where: { id: saleId },
+    include: { items: true },
   });
+  if (!sale) throw new Error("Sale not found");
+
+  // Restore stock (add back — because sale deducted stock)
+  for (const item of sale.items) {
+    await prisma.businessProduct.updateMany({
+      where: { sheetConnectionId: connection.id, id: item.productId },
+      data: { stock: { increment: item.quantity }, syncStatus: "PENDING" },
+    });
+  }
+
+  await prisma.businessSale.delete({
+    where: {
+      sheetConnectionId_id: { sheetConnectionId: connection.id, id: saleId },
+    },
+  });
+
+  enqueueSaleDeleteSync(userId, spreadsheetId, saleId);
+  for (const item of sale.items) {
+    enqueueProductSync(userId, spreadsheetId, item.productId);
+  }
+  await invalidateSpreadsheetCache(spreadsheetId);
 }
 
 // ═══════════════════════════════════════════════════
@@ -1345,7 +2412,7 @@ export interface BusinessReport {
 
 export async function getBusinessReport(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<BusinessReport> {
   const [products, sales, purchases, customers, suppliers] = await Promise.all([
     getProducts(userId, spreadsheetId),
@@ -1358,15 +2425,14 @@ export async function getBusinessReport(
   const totalRevenue = sales.reduce((sum, s) => sum + s.total, 0);
   const totalCost = purchases.reduce((sum, p) => sum + p.total, 0);
   const grossProfit = totalRevenue - totalCost;
-  const grossMargin =
-    totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
+  const grossMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
   const lowStockProducts = products.filter(
-    p => p.stock <= p.minStock && p.minStock > 0
+    (p) => p.stock <= p.minStock && p.minStock > 0,
   );
 
   const salesByDateMap = new Map<string, { revenue: number; orders: number }>();
-  sales.forEach(s => {
-    const date = new Date(s.date).toISOString().split('T')[0];
+  sales.forEach((s) => {
+    const date = new Date(s.date).toISOString().split("T")[0];
     const existing = salesByDateMap.get(date) ?? { revenue: 0, orders: 0 };
     salesByDateMap.set(date, {
       revenue: existing.revenue + s.total,
@@ -1382,8 +2448,8 @@ export async function getBusinessReport(
     string,
     { productName: string; totalQty: number; totalRevenue: number }
   >();
-  sales.forEach(s => {
-    (s.items ?? []).forEach(item => {
+  sales.forEach((s) => {
+    (s.items ?? []).forEach((item) => {
       const existing = productMap.get(item.productId) ?? {
         productName: item.productName,
         totalQty: 0,
@@ -1405,10 +2471,10 @@ export async function getBusinessReport(
     string,
     { customerName: string; totalOrders: number; totalSpent: number }
   >();
-  sales.forEach(s => {
+  sales.forEach((s) => {
     if (!s.customerId) return;
     const existing = custMap.get(s.customerId) ?? {
-      customerName: s.customerName ?? 'Unknown',
+      customerName: s.customerName ?? "Unknown",
       totalOrders: 0,
       totalSpent: 0,
     };
@@ -1426,10 +2492,10 @@ export async function getBusinessReport(
     string,
     { supplierName: string; totalPurchases: number; totalSpent: number }
   >();
-  purchases.forEach(p => {
+  purchases.forEach((p) => {
     if (!p.supplierId) return;
     const existing = supMap.get(p.supplierId) ?? {
-      supplierName: p.supplierName ?? 'Unknown',
+      supplierName: p.supplierName ?? "Unknown",
       totalPurchases: 0,
       totalSpent: 0,
     };
@@ -1462,16 +2528,24 @@ export async function getBusinessReport(
     recentSales: sales
       .sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       )
       .slice(0, 10),
     recentPurchases: purchases
       .sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       )
       .slice(0, 10),
     customerSummary,
     supplierSummary,
   };
 }
+
+export { makeSheetClient as makeSheetClientPublic };
+export {
+  sheetRowsToObjects as sheetRowsToObjectsPublic,
+  objectsToSheetRows as objectsToSheetRowsPublic,
+  padValues as padValuesPublic,
+};
+export { RANGES };

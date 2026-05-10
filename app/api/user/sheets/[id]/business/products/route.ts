@@ -1,13 +1,13 @@
 // app/api/user/sheets/[id]/business/products/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { handleApiError, requireAuth, requireRateLimit } from '@/lib/security';
-import { prisma } from '@/lib/db';
-import { getProducts, createProduct } from '@/lib/google-sheet-business';
-import { z } from 'zod/v4';
+import { NextRequest, NextResponse } from "next/server";
+import { handleApiError, requireAuth, requireRateLimit } from "@/lib/security";
+import { prisma } from "@/lib/db";
+import { getProducts, createProduct } from "@/lib/google-sheet-business";
+import { z } from "zod/v4";
 
 const CreateProductSchema = z.object({
-  name: z.string().min(1, 'Name is required'),
+  name: z.string().min(1, "Name is required"),
   sku: z.string().optional().nullable(),
   category: z.string().optional().nullable(),
   description: z.string().optional().nullable(),
@@ -53,26 +53,26 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   return handleApiError(async () => {
     const { id: connectionId } = await params;
     const user = await requireAuth();
-    await requireRateLimit(request, user.id, 'standard');
+    await requireRateLimit(request, user.id, "standard");
 
     const connection = await prisma.sheetConnection.findFirst({
       where: {
         id: connectionId,
         userId: user.id,
-        templateId: 'business-management',
+        templateId: "business-management",
         isActive: true,
       },
     });
 
     if (!connection) {
       return NextResponse.json(
-        { error: 'Connection not found' },
-        { status: 404 }
+        { error: "Connection not found" },
+        { status: 404 },
       );
     }
 

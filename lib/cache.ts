@@ -46,9 +46,7 @@ export function getCacheKey(prefix: string, ...parts: string[]): string {
 export async function getFromCache<T>(key: string): Promise<T | null> {
   try {
     const data = await redis.get<T>(key);
-    if (data) {
-      console.log(`[Cache] HIT: ${key}`);
-    }
+    // console.log(`[Cache] HIT: ${key}`); // COMMENT OUT
     return data;
   } catch (error) {
     console.error('[Cache] Error reading from cache:', error);
@@ -56,14 +54,10 @@ export async function getFromCache<T>(key: string): Promise<T | null> {
   }
 }
 
-export async function setInCache<T>(
-  key: string,
-  data: T,
-  ttlSeconds: number
-): Promise<void> {
+export async function setInCache<T>(key: string, data: T, ttlSeconds: number): Promise<void> {
   try {
     await redis.set(key, data, { ex: ttlSeconds });
-    console.log(`[Cache] SET: ${key} (TTL: ${ttlSeconds}s)`);
+    // console.log(`[Cache] SET: ${key} (TTL: ${ttlSeconds}s)`); // COMMENT OUT
   } catch (error) {
     console.error('[Cache] Error writing to cache:', error);
   }
