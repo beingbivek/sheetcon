@@ -10,43 +10,106 @@ import {
   sheetRowsToObjectsPublic,
 } from '@/lib/google-sheet-business';
 import { invalidateSpreadsheetCache } from '@/lib/cache';
-
-/**
- * Reconciliation Cron (Vercel: every 10 minutes)
- * 
- * Syncs changes made directly in Google Sheets back to PostgreSQL.
- * Triggered by: `vercel.json` or scheduled in dashboard
- * 
- * Only processes sheets updated in last 10 min to avoid excessive syncing.
- */
+import {
+  enqueueProductSync,
+  enqueueSupplierSync,
+  enqueueCustomerSync,
+  enqueuePurchaseSync,
+  enqueueSaleSync,
+} from '@/lib/db-sync';
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret (prevent unauthorized calls)
   const authHeader = request.headers.get('authorization');
   if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  try {
-    const startTime = Date.now();
-    let processedCount = 0;
-    let errorCount = 0;
+  const startTime = Date.now();
+  let synced = 0;
+  let retried = 0;
+  let errors = 0;
 
-    // Find all active business-management sheets
+  try {
+    // ── 1. Retry FAILED rows ────────────────────────────────────────────────
+
+    // Failed products
+    const failedProducts = await prisma.businessProduct.findMany({
+      where: { syncStatus: 'FAILED' },
+      select: { id: true, sheetConnection: { select: { userId: true } }, externalSheetId: true },
+      take: 50,
+    });
+    for (const p of failedProducts) {
+      try {
+        enqueueProductSync(p.sheetConnection.userId, p.externalSheetId, p.id);
+        retried++;
+      } catch { errors++; }
+    }
+
+    // Failed suppliers
+    const failedSuppliers = await prisma.businessSupplier.findMany({
+      where: { syncStatus: 'FAILED' },
+      select: { id: true, sheetConnection: { select: { userId: true } }, externalSheetId: true },
+      take: 50,
+    });
+    for (const s of failedSuppliers) {
+      try {
+        enqueueSupplierSync(s.sheetConnection.userId, s.externalSheetId, s.id);
+        retried++;
+      } catch { errors++; }
+    }
+
+    // Failed customers
+    const failedCustomers = await prisma.businessCustomer.findMany({
+      where: { syncStatus: 'FAILED' },
+      select: { id: true, sheetConnection: { select: { userId: true } }, externalSheetId: true },
+      take: 50,
+    });
+    for (const c of failedCustomers) {
+      try {
+        enqueueCustomerSync(c.sheetConnection.userId, c.externalSheetId, c.id);
+        retried++;
+      } catch { errors++; }
+    }
+
+    // Failed purchases
+    const failedPurchases = await prisma.businessPurchase.findMany({
+      where: { syncStatus: 'FAILED' },
+      select: { id: true, sheetConnection: { select: { userId: true } }, externalSheetId: true },
+      take: 50,
+    });
+    for (const p of failedPurchases) {
+      try {
+        enqueuePurchaseSync(p.sheetConnection.userId, p.externalSheetId, p.id);
+        retried++;
+      } catch { errors++; }
+    }
+
+    // Failed sales
+    const failedSales = await prisma.businessSale.findMany({
+      where: { syncStatus: 'FAILED' },
+      select: { id: true, sheetConnection: { select: { userId: true } }, externalSheetId: true },
+      take: 50,
+    });
+    for (const s of failedSales) {
+      try {
+        enqueueSaleSync(s.sheetConnection.userId, s.externalSheetId, s.id);
+        retried++;
+      } catch { errors++; }
+    }
+
+    // ── 2. Reconcile sheet → DB for active connections ──────────────────────
+
     const connections = await prisma.sheetConnection.findMany({
       where: {
         templateId: 'business-management',
         isActive: true,
-        lastSyncedAt: {
-          gte: new Date(Date.now() - 10 * 60 * 1000), // Last 10 min
-        },
       },
       select: {
         id: true,
         userId: true,
         spreadsheetId: true,
-        user: { select: { id: true } },
       },
+      take: 20, // Max 20 connections per cron run
     });
 
     for (const conn of connections) {
@@ -54,7 +117,7 @@ export async function GET(request: NextRequest) {
         const auth = await getOAuth2Client(conn.userId);
         const sheets = google.sheets({ version: 'v4', auth });
 
-        // Reconcile Products
+        // Products
         const pRes = await sheets.spreadsheets.values.get({
           spreadsheetId: conn.spreadsheetId,
           range: SHEET_RANGES.PRODUCTS,
@@ -65,17 +128,21 @@ export async function GET(request: NextRequest) {
         ) as any[];
 
         for (const sp of sheetProducts) {
-          const dbProduct = await prisma.businessProduct.findUnique({
+          if (!sp.id) continue;
+          const db = await prisma.businessProduct.findUnique({
             where: { id: sp.id },
+            select: { updatedAt: true },
           });
-
-          const sheetUpdated = new Date(sp.updatedAt).getTime();
-          const dbUpdated = dbProduct?.updatedAt?.getTime() ?? 0;
-
-          // Sheet is newer — upsert into DB
-          if (sheetUpdated > dbUpdated) {
+          const sheetTs = sp.updatedAt ? new Date(sp.updatedAt).getTime() : 0;
+          const dbTs = db?.updatedAt?.getTime() ?? 0;
+          if (sheetTs > dbTs) {
             await prisma.businessProduct.upsert({
-              where: { sheetConnectionId_id: { sheetConnectionId: conn.id, id: sp.id } },
+              where: {
+                sheetConnectionId_id: {
+                  sheetConnectionId: conn.id,
+                  id: sp.id,
+                },
+              },
               update: {
                 name: sp.name,
                 sku: sp.sku,
@@ -109,136 +176,38 @@ export async function GET(request: NextRequest) {
                 supplierId: sp.supplierId,
                 supplierName: sp.supplierName,
                 imageUrl: sp.imageUrl,
-                createdAt: new Date(sp.createdAt),
+                createdAt: sp.createdAt ? new Date(sp.createdAt) : new Date(),
                 updatedAt: new Date(sp.updatedAt),
                 lastSyncedAt: new Date(),
               },
             });
-            processedCount++;
-          }
-        }
-
-        // Reconcile Suppliers
-        const sRes = await sheets.spreadsheets.values.get({
-          spreadsheetId: conn.spreadsheetId,
-          range: SHEET_RANGES.SUPPLIERS,
-        });
-        const sheetSuppliers = sheetRowsToObjectsPublic(
-          sRes.data.values as string[][] | null,
-          SHEET_HEADERS.SUPPLIERS
-        ) as any[];
-
-        for (const ss of sheetSuppliers) {
-          const dbSupplier = await prisma.businessSupplier.findUnique({
-            where: { id: ss.id },
-          });
-
-          const sheetUpdated = new Date(ss.createdAt).getTime();
-          const dbUpdated = dbSupplier?.updatedAt?.getTime() ?? 0;
-
-          if (sheetUpdated > dbUpdated) {
-            await prisma.businessSupplier.upsert({
-              where: { sheetConnectionId_id: { sheetConnectionId: conn.id, id: ss.id } },
-              update: {
-                name: ss.name,
-                phone: ss.phone,
-                email: ss.email,
-                address: ss.address,
-                city: ss.city,
-                contactPerson: ss.contactPerson,
-                paymentTerms: ss.paymentTerms,
-                notes: ss.notes,
-                lastSyncedAt: new Date(),
-              },
-              create: {
-                id: ss.id,
-                sheetConnectionId: conn.id,
-                externalSheetId: conn.spreadsheetId,
-                name: ss.name,
-                phone: ss.phone,
-                email: ss.email,
-                address: ss.address,
-                city: ss.city,
-                contactPerson: ss.contactPerson,
-                paymentTerms: ss.paymentTerms,
-                notes: ss.notes,
-                createdAt: new Date(ss.createdAt),
-                lastSyncedAt: new Date(),
-              },
-            });
-            processedCount++;
-          }
-        }
-
-        // Reconcile Customers
-        const cRes = await sheets.spreadsheets.values.get({
-          spreadsheetId: conn.spreadsheetId,
-          range: SHEET_RANGES.CUSTOMERS,
-        });
-        const sheetCustomers = sheetRowsToObjectsPublic(
-          cRes.data.values as string[][] | null,
-          SHEET_HEADERS.CUSTOMERS
-        ) as any[];
-
-        for (const sc of sheetCustomers) {
-          const dbCustomer = await prisma.businessCustomer.findUnique({
-            where: { id: sc.id },
-          });
-
-          const sheetUpdated = new Date(sc.createdAt).getTime();
-          const dbUpdated = dbCustomer?.updatedAt?.getTime() ?? 0;
-
-          if (sheetUpdated > dbUpdated) {
-            await prisma.businessCustomer.upsert({
-              where: { sheetConnectionId_id: { sheetConnectionId: conn.id, id: sc.id } },
-              update: {
-                name: sc.name,
-                phone: sc.phone,
-                email: sc.email,
-                address: sc.address,
-                city: sc.city,
-                customerType: sc.customerType,
-                notes: sc.notes,
-                lastSyncedAt: new Date(),
-              },
-              create: {
-                id: sc.id,
-                sheetConnectionId: conn.id,
-                externalSheetId: conn.spreadsheetId,
-                name: sc.name,
-                phone: sc.phone,
-                email: sc.email,
-                address: sc.address,
-                city: sc.city,
-                customerType: sc.customerType,
-                notes: sc.notes,
-                createdAt: new Date(sc.createdAt),
-                lastSyncedAt: new Date(),
-              },
-            });
-            processedCount++;
+            synced++;
           }
         }
 
         await invalidateSpreadsheetCache(conn.spreadsheetId);
+        await prisma.sheetConnection.update({
+          where: { id: conn.id },
+          data: { lastSyncedAt: new Date() },
+        });
       } catch (err) {
         console.error(`[Reconcile] Error for connection ${conn.id}:`, err);
-        errorCount++;
+        errors++;
       }
     }
 
-    const duration = Date.now() - startTime;
     return NextResponse.json({
       success: true,
-      processed: processedCount,
-      errors: errorCount,
+      synced,
+      retried,
+      errors,
       connections: connections.length,
-      duration: `${duration}ms`,
+      duration: `${Date.now() - startTime}ms`,
     });
   } catch (err) {
     console.error('[Reconcile] Cron failed:', err);
     return NextResponse.json(
-      { error: 'Reconciliation failed', details: String(err) },
+      { error: 'Reconciliation failed' },
       { status: 500 }
     );
   }
