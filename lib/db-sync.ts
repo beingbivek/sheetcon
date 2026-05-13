@@ -19,6 +19,11 @@ import {
   type PurchaseItem as SheetPurchaseItem, // ADD
   type Sale as SheetSale, // ADD
   type SaleItem as SheetSaleItem,
+  type BusinessOrder as SheetOrder,
+  type BusinessOrderItem as SheetOrderItem,
+  type BusinessDelivery as SheetDelivery,
+  type BusinessReturn as SheetReturn,
+  type BusinessReturnItem as SheetReturnItem,
 } from "@/lib/google-sheet-business";
 import { invalidateSpreadsheetCache } from "@/lib/cache";
 import { sheetsQueue } from "@/lib/google-sheets-queue";
@@ -1573,4 +1578,538 @@ export function enqueueConfigSync(userId: string, spreadsheetId: string): void {
         })
         .catch(() => {});
     });
+}
+
+// ORDERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function importOrdersFromSheet(
+  userId: string,
+  sheetConnectionId: string,
+  spreadsheetId: string
+): Promise<number> {
+  try {
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const [oRes, oiRes, dRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGES.ORDERS }),
+      sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGES.ORDER_ITEMS }),
+      sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGES.DELIVERIES }),
+    ]);
+
+    const orders = sheetRowsToObjectsPublic(
+      oRes.data.values as string[][] | null, SHEET_HEADERS.ORDERS
+    ) as any[];
+    const orderItems = sheetRowsToObjectsPublic(
+      oiRes.data.values as string[][] | null, SHEET_HEADERS.ORDER_ITEMS
+    ) as any[];
+    const deliveries = sheetRowsToObjectsPublic(
+      dRes.data.values as string[][] | null, SHEET_HEADERS.DELIVERIES
+    ) as any[];
+
+    if (orders.length === 0) return 0;
+
+    for (const o of orders) {
+      await prisma.businessOrder.upsert({
+        where: { sheetConnectionId_id: { sheetConnectionId, id: o.id } },
+        update: {
+          orderNumber: o.orderNumber,
+          date: o.date,
+          customerId: o.customerId,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          customerAddress: o.customerAddress,
+          subtotal: Number(o.subtotal) || 0,
+          deliveryFee: Number(o.deliveryFee) || 0,
+          discountAmount: Number(o.discountAmount) || 0,
+          total: Number(o.total) || 0,
+          amountPaid: Number(o.amountPaid) || 0,
+          amountDue: Number(o.amountDue) || 0,
+          paymentMethod: o.paymentMethod,
+          paymentStatus: o.paymentStatus || 'UNPAID',
+          status: o.status || 'PENDING',
+          notes: o.notes,
+          confirmedAt: o.confirmedAt ? new Date(o.confirmedAt) : null,
+          packedAt: o.packedAt ? new Date(o.packedAt) : null,
+          dispatchedAt: o.dispatchedAt ? new Date(o.dispatchedAt) : null,
+          deliveredAt: o.deliveredAt ? new Date(o.deliveredAt) : null,
+          cancelledAt: o.cancelledAt ? new Date(o.cancelledAt) : null,
+          returnedAt: o.returnedAt ? new Date(o.returnedAt) : null,
+          lastSyncedAt: new Date(),
+          syncStatus: 'SYNCED',
+        },
+        create: {
+          id: o.id,
+          sheetConnectionId,
+          externalSheetId: spreadsheetId,
+          orderNumber: o.orderNumber,
+          date: o.date,
+          customerId: o.customerId,
+          customerName: o.customerName,
+          customerPhone: o.customerPhone,
+          customerAddress: o.customerAddress,
+          subtotal: Number(o.subtotal) || 0,
+          deliveryFee: Number(o.deliveryFee) || 0,
+          discountAmount: Number(o.discountAmount) || 0,
+          total: Number(o.total) || 0,
+          amountPaid: Number(o.amountPaid) || 0,
+          amountDue: Number(o.amountDue) || 0,
+          paymentMethod: o.paymentMethod,
+          paymentStatus: o.paymentStatus || 'UNPAID',
+          status: o.status || 'PENDING',
+          notes: o.notes,
+          confirmedAt: o.confirmedAt ? new Date(o.confirmedAt) : null,
+          packedAt: o.packedAt ? new Date(o.packedAt) : null,
+          dispatchedAt: o.dispatchedAt ? new Date(o.dispatchedAt) : null,
+          deliveredAt: o.deliveredAt ? new Date(o.deliveredAt) : null,
+          cancelledAt: o.cancelledAt ? new Date(o.cancelledAt) : null,
+          returnedAt: o.returnedAt ? new Date(o.returnedAt) : null,
+          createdAt: o.createdAt ? new Date(o.createdAt) : new Date(),
+          lastSyncedAt: new Date(),
+          syncStatus: 'SYNCED',
+        },
+      });
+
+      // Items
+      await prisma.businessOrderItem.deleteMany({ where: { orderId: o.id } });
+      const items = orderItems.filter(i => i.orderId === o.id);
+      if (items.length > 0) {
+        await prisma.businessOrderItem.createMany({
+          data: items.map(i => ({
+            id: i.id,
+            orderId: o.id,
+            productId: i.productId,
+            productName: i.productName,
+            variation: i.variation || null,
+            quantity: Number(i.quantity) || 0,
+            unitPrice: Number(i.unitPrice) || 0,
+            total: Number(i.total) || 0,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      // Delivery
+      const delivery = deliveries.find(d => d.orderId === o.id);
+      if (delivery) {
+        await prisma.businessDelivery.upsert({
+          where: { orderId: o.id },
+          update: {
+            agentType: delivery.agentType || 'STAFF',
+            agentName: delivery.agentName,
+            agentPhone: delivery.agentPhone,
+            courierName: delivery.courierName,
+            trackingCode: delivery.trackingCode,
+            deliveryFee: Number(delivery.deliveryFee) || 0,
+            notes: delivery.notes,
+            deliveredAt: delivery.deliveredAt ? new Date(delivery.deliveredAt) : null,
+          },
+          create: {
+            id: delivery.id || `DEL_${o.id}`,
+            orderId: o.id,
+            agentType: delivery.agentType || 'STAFF',
+            agentName: delivery.agentName,
+            agentPhone: delivery.agentPhone,
+            courierName: delivery.courierName,
+            trackingCode: delivery.trackingCode,
+            deliveryFee: Number(delivery.deliveryFee) || 0,
+            notes: delivery.notes,
+            assignedAt: delivery.assignedAt ? new Date(delivery.assignedAt) : new Date(),
+            deliveredAt: delivery.deliveredAt ? new Date(delivery.deliveredAt) : null,
+          },
+        });
+      }
+    }
+
+    await invalidateSpreadsheetCache(spreadsheetId);
+    return orders.length;
+  } catch (err) {
+    console.warn('[Sync] Could not read orders sheet:', err);
+    return 0;
+  }
+}
+
+export async function syncOrderToSheet(
+  userId: string,
+  spreadsheetId: string,
+  orderId: string
+): Promise<void> {
+  const dbOrder = await prisma.businessOrder.findUnique({
+    where: { id: orderId },
+    include: { items: true, delivery: true },
+  });
+  if (!dbOrder) return;
+
+  const auth = await getOAuth2Client(userId);
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  // Sync order row
+  const oRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.ORDERS,
+  });
+  const allOrders = sheetRowsToObjectsPublic(
+    oRes.data.values as string[][] | null, SHEET_HEADERS.ORDERS
+  ) as any[];
+
+  const sheetOrder = {
+    id: dbOrder.id,
+    orderNumber: dbOrder.orderNumber,
+    date: dbOrder.date,
+    customerId: dbOrder.customerId,
+    customerName: dbOrder.customerName,
+    customerPhone: dbOrder.customerPhone,
+    customerAddress: dbOrder.customerAddress,
+    subtotal: dbOrder.subtotal,
+    deliveryFee: dbOrder.deliveryFee,
+    discountAmount: dbOrder.discountAmount,
+    total: dbOrder.total,
+    amountPaid: dbOrder.amountPaid,
+    amountDue: dbOrder.amountDue,
+    paymentMethod: dbOrder.paymentMethod,
+    paymentStatus: dbOrder.paymentStatus,
+    status: dbOrder.status,
+    notes: dbOrder.notes,
+    confirmedAt: dbOrder.confirmedAt?.toISOString() ?? '',
+    packedAt: dbOrder.packedAt?.toISOString() ?? '',
+    dispatchedAt: dbOrder.dispatchedAt?.toISOString() ?? '',
+    deliveredAt: dbOrder.deliveredAt?.toISOString() ?? '',
+    cancelledAt: dbOrder.cancelledAt?.toISOString() ?? '',
+    returnedAt: dbOrder.returnedAt?.toISOString() ?? '',
+    createdAt: dbOrder.createdAt.toISOString(),
+  };
+
+  const oIdx = allOrders.findIndex(o => o.id === dbOrder.id);
+  if (oIdx === -1) {
+    const values = objectsToSheetRowsPublic([sheetOrder], SHEET_HEADERS.ORDERS);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId, range: `Orders!A:X`,
+      valueInputOption: 'RAW', requestBody: { values },
+    });
+  } else {
+    allOrders[oIdx] = sheetOrder;
+    const values = objectsToSheetRowsPublic(allOrders, SHEET_HEADERS.ORDERS);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `Orders!A2:X`,
+      valueInputOption: 'RAW', requestBody: { values },
+    });
+  }
+
+  // Sync order items
+  const oiRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.ORDER_ITEMS,
+  });
+  const allOrderItems = sheetRowsToObjectsPublic(
+    oiRes.data.values as string[][] | null, SHEET_HEADERS.ORDER_ITEMS
+  ) as any[];
+  const otherItems = allOrderItems.filter(i => i.orderId !== dbOrder.id);
+  const newItems = dbOrder.items.map(i => ({
+    id: i.id, orderId: dbOrder.id,
+    productId: i.productId, productName: i.productName,
+    variation: i.variation, quantity: i.quantity,
+    unitPrice: i.unitPrice, total: i.total,
+  }));
+  const mergedItems = [...otherItems, ...newItems];
+  const itemValues = objectsToSheetRowsPublic(mergedItems, SHEET_HEADERS.ORDER_ITEMS);
+  const paddedItems = padValuesPublic(
+    itemValues, SHEET_HEADERS.ORDER_ITEMS.length,
+    Math.max(allOrderItems.length, mergedItems.length)
+  );
+  await sheets.spreadsheets.values.update({
+    spreadsheetId, range: `OrderItems!A2:H`,
+    valueInputOption: 'RAW', requestBody: { values: paddedItems },
+  });
+
+  // Sync delivery if exists
+  if (dbOrder.delivery) {
+    const dRes = await sheets.spreadsheets.values.get({
+      spreadsheetId, range: SHEET_RANGES.DELIVERIES,
+    });
+    const allDeliveries = sheetRowsToObjectsPublic(
+      dRes.data.values as string[][] | null, SHEET_HEADERS.DELIVERIES
+    ) as any[];
+    const d = dbOrder.delivery;
+    const sheetDelivery = {
+      id: d.id, orderId: d.orderId,
+      agentType: d.agentType, agentName: d.agentName,
+      agentPhone: d.agentPhone, courierName: d.courierName,
+      trackingCode: d.trackingCode, deliveryFee: d.deliveryFee,
+      notes: d.notes,
+      assignedAt: d.assignedAt.toISOString(),
+      deliveredAt: d.deliveredAt?.toISOString() ?? '',
+    };
+    const dIdx = allDeliveries.findIndex(x => x.orderId === dbOrder.id);
+    if (dIdx === -1) {
+      const values = objectsToSheetRowsPublic([sheetDelivery], SHEET_HEADERS.DELIVERIES);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId, range: `Deliveries!A:K`,
+        valueInputOption: 'RAW', requestBody: { values },
+      });
+    } else {
+      allDeliveries[dIdx] = sheetDelivery;
+      const values = objectsToSheetRowsPublic(allDeliveries, SHEET_HEADERS.DELIVERIES);
+      await sheets.spreadsheets.values.update({
+        spreadsheetId, range: `Deliveries!A2:K`,
+        valueInputOption: 'RAW', requestBody: { values },
+      });
+    }
+  }
+
+  await prisma.businessOrder.update({
+    where: { id: orderId },
+    data: { lastSyncedAt: new Date(), syncStatus: 'SYNCED', syncError: null },
+  });
+  await invalidateSpreadsheetCache(spreadsheetId);
+}
+
+export async function syncOrderDeleteToSheet(
+  userId: string,
+  spreadsheetId: string,
+  orderId: string
+): Promise<void> {
+  const auth = await getOAuth2Client(userId);
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const oRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.ORDERS,
+  });
+  const allOrders = sheetRowsToObjectsPublic(
+    oRes.data.values as string[][] | null, SHEET_HEADERS.ORDERS
+  ) as any[];
+  const filtered = allOrders.filter(o => o.id !== orderId);
+  if (filtered.length < allOrders.length) {
+    const values = objectsToSheetRowsPublic(filtered, SHEET_HEADERS.ORDERS);
+    const padded = padValuesPublic(values, SHEET_HEADERS.ORDERS.length, allOrders.length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `Orders!A2:X`,
+      valueInputOption: 'RAW', requestBody: { values: padded },
+    });
+  }
+
+  const oiRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.ORDER_ITEMS,
+  });
+  const allItems = sheetRowsToObjectsPublic(
+    oiRes.data.values as string[][] | null, SHEET_HEADERS.ORDER_ITEMS
+  ) as any[];
+  const filteredItems = allItems.filter(i => i.orderId !== orderId);
+  if (filteredItems.length < allItems.length) {
+    const values = objectsToSheetRowsPublic(filteredItems, SHEET_HEADERS.ORDER_ITEMS);
+    const padded = padValuesPublic(values, SHEET_HEADERS.ORDER_ITEMS.length, allItems.length);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `OrderItems!A2:H`,
+      valueInputOption: 'RAW', requestBody: { values: padded },
+    });
+  }
+
+  await invalidateSpreadsheetCache(spreadsheetId);
+}
+
+export function enqueueOrderSync(userId: string, spreadsheetId: string, orderId: string): void {
+  sheetsQueue.enqueue({
+    userId, type: 'WRITE', priority: 'HIGH',
+    operation: () => syncOrderToSheet(userId, spreadsheetId, orderId),
+    resolve: () => {}, reject: () => {},
+  }).catch(async () => {
+    await prisma.businessOrder.update({
+      where: { id: orderId },
+      data: { syncStatus: 'FAILED', syncError: 'Queue error' },
+    }).catch(() => {});
+  });
+}
+
+export function enqueueOrderDeleteSync(userId: string, spreadsheetId: string, orderId: string): void {
+  sheetsQueue.enqueue({
+    userId, type: 'WRITE', priority: 'HIGH',
+    operation: () => syncOrderDeleteToSheet(userId, spreadsheetId, orderId),
+    resolve: () => {}, reject: () => {},
+  }).catch(() => {});
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// RETURNS
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function importReturnsFromSheet(
+  userId: string,
+  sheetConnectionId: string,
+  spreadsheetId: string
+): Promise<number> {
+  try {
+    const auth = await getOAuth2Client(userId);
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    const [rRes, riRes] = await Promise.all([
+      sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGES.RETURNS }),
+      sheets.spreadsheets.values.get({ spreadsheetId, range: SHEET_RANGES.RETURN_ITEMS }),
+    ]);
+
+    const returns = sheetRowsToObjectsPublic(
+      rRes.data.values as string[][] | null, SHEET_HEADERS.RETURNS
+    ) as any[];
+    const returnItems = sheetRowsToObjectsPublic(
+      riRes.data.values as string[][] | null, SHEET_HEADERS.RETURN_ITEMS
+    ) as any[];
+
+    if (returns.length === 0) return 0;
+
+    for (const r of returns) {
+      await prisma.businessReturn.upsert({
+        where: { sheetConnectionId_id: { sheetConnectionId, id: r.id } },
+        update: {
+          returnNumber: r.returnNumber,
+          returnType: r.returnType,
+          date: r.date,
+          saleId: r.saleId, saleInvoice: r.saleInvoice,
+          customerId: r.customerId, customerName: r.customerName,
+          purchaseId: r.purchaseId, purchaseInvoice: r.purchaseInvoice,
+          supplierId: r.supplierId, supplierName: r.supplierName,
+          reason: r.reason, notes: r.notes,
+          status: r.status || 'PENDING',
+          totalValue: Number(r.totalValue) || 0,
+          refundAmount: Number(r.refundAmount) || 0,
+          refundMethod: r.refundMethod,
+          lastSyncedAt: new Date(),
+          syncStatus: 'SYNCED',
+        },
+        create: {
+          id: r.id,
+          sheetConnectionId,
+          externalSheetId: spreadsheetId,
+          returnNumber: r.returnNumber,
+          returnType: r.returnType,
+          date: r.date,
+          saleId: r.saleId, saleInvoice: r.saleInvoice,
+          customerId: r.customerId, customerName: r.customerName,
+          purchaseId: r.purchaseId, purchaseInvoice: r.purchaseInvoice,
+          supplierId: r.supplierId, supplierName: r.supplierName,
+          reason: r.reason, notes: r.notes,
+          status: r.status || 'PENDING',
+          totalValue: Number(r.totalValue) || 0,
+          refundAmount: Number(r.refundAmount) || 0,
+          refundMethod: r.refundMethod,
+          createdAt: r.createdAt ? new Date(r.createdAt) : new Date(),
+          lastSyncedAt: new Date(),
+          syncStatus: 'SYNCED',
+        },
+      });
+
+      await prisma.businessReturnItem.deleteMany({ where: { returnId: r.id } });
+      const items = returnItems.filter(i => i.returnId === r.id);
+      if (items.length > 0) {
+        await prisma.businessReturnItem.createMany({
+          data: items.map(i => ({
+            id: i.id, returnId: r.id,
+            productId: i.productId, productName: i.productName,
+            quantity: Number(i.quantity) || 0,
+            unitPrice: Number(i.unitPrice) || 0,
+            total: Number(i.total) || 0,
+            condition: i.condition || 'DAMAGED',
+          })),
+          skipDuplicates: true,
+        });
+      }
+    }
+
+    await invalidateSpreadsheetCache(spreadsheetId);
+    return returns.length;
+  } catch (err) {
+    console.warn('[Sync] Could not read returns sheet:', err);
+    return 0;
+  }
+}
+
+export async function syncReturnToSheet(
+  userId: string,
+  spreadsheetId: string,
+  returnId: string
+): Promise<void> {
+  const dbReturn = await prisma.businessReturn.findUnique({
+    where: { id: returnId },
+    include: { items: true },
+  });
+  if (!dbReturn) return;
+
+  const auth = await getOAuth2Client(userId);
+  const sheets = google.sheets({ version: 'v4', auth });
+
+  const rRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.RETURNS,
+  });
+  const allReturns = sheetRowsToObjectsPublic(
+    rRes.data.values as string[][] | null, SHEET_HEADERS.RETURNS
+  ) as any[];
+
+  const sheetReturn = {
+    id: dbReturn.id, returnNumber: dbReturn.returnNumber,
+    returnType: dbReturn.returnType, date: dbReturn.date,
+    saleId: dbReturn.saleId, saleInvoice: dbReturn.saleInvoice,
+    customerId: dbReturn.customerId, customerName: dbReturn.customerName,
+    purchaseId: dbReturn.purchaseId, purchaseInvoice: dbReturn.purchaseInvoice,
+    supplierId: dbReturn.supplierId, supplierName: dbReturn.supplierName,
+    reason: dbReturn.reason, notes: dbReturn.notes,
+    status: dbReturn.status,
+    totalValue: dbReturn.totalValue, refundAmount: dbReturn.refundAmount,
+    refundMethod: dbReturn.refundMethod,
+    createdAt: dbReturn.createdAt.toISOString(),
+  };
+
+  const rIdx = allReturns.findIndex(r => r.id === dbReturn.id);
+  if (rIdx === -1) {
+    const values = objectsToSheetRowsPublic([sheetReturn], SHEET_HEADERS.RETURNS);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId, range: `Returns!A:S`,
+      valueInputOption: 'RAW', requestBody: { values },
+    });
+  } else {
+    allReturns[rIdx] = sheetReturn;
+    const values = objectsToSheetRowsPublic(allReturns, SHEET_HEADERS.RETURNS);
+    await sheets.spreadsheets.values.update({
+      spreadsheetId, range: `Returns!A2:S`,
+      valueInputOption: 'RAW', requestBody: { values },
+    });
+  }
+
+  const riRes = await sheets.spreadsheets.values.get({
+    spreadsheetId, range: SHEET_RANGES.RETURN_ITEMS,
+  });
+  const allReturnItems = sheetRowsToObjectsPublic(
+    riRes.data.values as string[][] | null, SHEET_HEADERS.RETURN_ITEMS
+  ) as any[];
+  const otherItems = allReturnItems.filter(i => i.returnId !== dbReturn.id);
+  const newItems = dbReturn.items.map(i => ({
+    id: i.id, returnId: dbReturn.id,
+    productId: i.productId, productName: i.productName,
+    quantity: i.quantity, unitPrice: i.unitPrice,
+    total: i.total, condition: i.condition,
+  }));
+  const merged = [...otherItems, ...newItems];
+  const riValues = objectsToSheetRowsPublic(merged, SHEET_HEADERS.RETURN_ITEMS);
+  const riPadded = padValuesPublic(
+    riValues, SHEET_HEADERS.RETURN_ITEMS.length,
+    Math.max(allReturnItems.length, merged.length)
+  );
+  await sheets.spreadsheets.values.update({
+    spreadsheetId, range: `ReturnItems!A2:H`,
+    valueInputOption: 'RAW', requestBody: { values: riPadded },
+  });
+
+  await prisma.businessReturn.update({
+    where: { id: returnId },
+    data: { lastSyncedAt: new Date(), syncStatus: 'SYNCED', syncError: null },
+  });
+  await invalidateSpreadsheetCache(spreadsheetId);
+}
+
+export function enqueueReturnSync(userId: string, spreadsheetId: string, returnId: string): void {
+  sheetsQueue.enqueue({
+    userId, type: 'WRITE', priority: 'HIGH',
+    operation: () => syncReturnToSheet(userId, spreadsheetId, returnId),
+    resolve: () => {}, reject: () => {},
+  }).catch(async () => {
+    await prisma.businessReturn.update({
+      where: { id: returnId },
+      data: { syncStatus: 'FAILED', syncError: 'Queue error' },
+    }).catch(() => {});
+  });
 }

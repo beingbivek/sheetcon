@@ -1,32 +1,32 @@
 // app/api/user/sheets/[id]/business/resync/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { handleApiError, requireAuth, requireRateLimit } from '@/lib/security';
-import { prisma } from '@/lib/db';
+import { NextRequest, NextResponse } from "next/server";
+import { handleApiError, requireAuth, requireRateLimit } from "@/lib/security";
+import { prisma } from "@/lib/db";
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   return handleApiError(async () => {
     const { id: connectionId } = await params;
     const user = await requireAuth();
     // Use 'relaxed' — resync is user-initiated, not a write op
-    await requireRateLimit(request, user.id, 'relaxed');
+    await requireRateLimit(request, user.id, "relaxed");
 
     const connection = await prisma.sheetConnection.findFirst({
       where: {
         id: connectionId,
         userId: user.id,
-        templateId: 'business-management',
+        templateId: "business-management",
         isActive: true,
       },
     });
 
     if (!connection) {
       return NextResponse.json(
-        { error: 'Connection not found' },
-        { status: 404 }
+        { error: "Connection not found" },
+        { status: 404 },
       );
     }
 
@@ -37,7 +37,9 @@ export async function POST(
       importPurchasesFromSheet,
       importSalesFromSheet,
       importConfigFromSheet,
-    } = await import('@/lib/db-sync');
+      importOrdersFromSheet,
+      importReturnsFromSheet,
+    } = await import("@/lib/db-sync");
 
     // Run sequentially to avoid hitting Google rate limits
     const results = {
@@ -47,12 +49,16 @@ export async function POST(
       purchases: 0,
       sales: 0,
       config: false as boolean,
+      orders: 0,
+      returns: 0,
       errors: [] as string[],
     };
 
     try {
       results.products = await importProductsFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`products: ${String(e)}`);
@@ -60,7 +66,9 @@ export async function POST(
 
     try {
       results.suppliers = await importSuppliersFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`suppliers: ${String(e)}`);
@@ -68,7 +76,9 @@ export async function POST(
 
     try {
       results.customers = await importCustomersFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`customers: ${String(e)}`);
@@ -76,7 +86,9 @@ export async function POST(
 
     try {
       results.purchases = await importPurchasesFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`purchases: ${String(e)}`);
@@ -84,7 +96,9 @@ export async function POST(
 
     try {
       results.sales = await importSalesFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`sales: ${String(e)}`);
@@ -92,16 +106,38 @@ export async function POST(
 
     try {
       results.config = await importConfigFromSheet(
-        user.id, connection.id, connection.spreadsheetId
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
       );
     } catch (e) {
       results.errors.push(`config: ${String(e)}`);
     }
 
+    try {
+      results.orders = await importOrdersFromSheet(
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
+      );
+    } catch (e) {
+      results.errors.push(`orders: ${String(e)}`);
+    }
+
+    try {
+      results.returns = await importReturnsFromSheet(
+        user.id,
+        connection.id,
+        connection.spreadsheetId,
+      );
+    } catch (e) {
+      results.errors.push(`returns: ${String(e)}`);
+    }
+
     // Update last synced
     await prisma.sheetConnection.update({
       where: { id: connection.id },
-      data: { lastSyncedAt: new Date(), syncStatus: 'SYNCED' },
+      data: { lastSyncedAt: new Date(), syncStatus: "SYNCED" },
     });
 
     return NextResponse.json({

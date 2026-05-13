@@ -164,24 +164,28 @@ export async function POST(request: NextRequest) {
     });
 
     // Seed DB from sheet (non-blocking — fails silently on empty new sheets)
-    if (templateId === 'business-management') {
-  const {
-    importProductsFromSheet,
-    importSuppliersFromSheet,
-    importCustomersFromSheet,
-    importPurchasesFromSheet,
-    importSalesFromSheet,
-    importConfigFromSheet,
-  } = await import('@/lib/db-sync');
-  Promise.all([
-    importProductsFromSheet(user.id, connection.id, finalSpreadsheetId),
-    importSuppliersFromSheet(user.id, connection.id, finalSpreadsheetId),
-    importCustomersFromSheet(user.id, connection.id, finalSpreadsheetId),
-    importPurchasesFromSheet(user.id, connection.id, finalSpreadsheetId),
-    importSalesFromSheet(user.id, connection.id, finalSpreadsheetId),
-    importConfigFromSheet(user.id, connection.id, finalSpreadsheetId),
-  ]).catch(err => console.warn('[Sync] Initial import failed:', err));
-}
+    if (templateId === "business-management") {
+      const {
+        importProductsFromSheet,
+        importSuppliersFromSheet,
+        importCustomersFromSheet,
+        importPurchasesFromSheet,
+        importSalesFromSheet,
+        importConfigFromSheet,
+        importOrdersFromSheet,
+        importReturnsFromSheet,
+      } = await import("@/lib/db-sync");
+      Promise.all([
+        importProductsFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importSuppliersFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importCustomersFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importPurchasesFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importSalesFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importConfigFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importOrdersFromSheet(user.id, connection.id, finalSpreadsheetId),
+        importReturnsFromSheet(user.id, connection.id, finalSpreadsheetId),
+      ]).catch((err) => console.warn("[Sync] Initial import failed:", err));
+    }
 
     return NextResponse.json({
       success: true,

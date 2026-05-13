@@ -104,13 +104,15 @@ model SheetConnection {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  products  BusinessProduct[]
-  suppliers BusinessSupplier[]
-  customers BusinessCustomer[]
-  purchases BusinessPurchase[]
-  sales     BusinessSale[]
-  config    BusinessConfig?
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  products        BusinessProduct[]
+  suppliers       BusinessSupplier[]
+  customers       BusinessCustomer[]
+  purchases       BusinessPurchase[]
+  sales           BusinessSale[]
+  config          BusinessConfig?
+  businessOrders  BusinessOrder[]
+  businessReturns BusinessReturn[]
 
   @@unique([userId, spreadsheetId])
   @@index([userId, isActive])
@@ -386,6 +388,153 @@ model BusinessSaleItem {
   sale BusinessSale @relation(fields: [saleId], references: [id], onDelete: Cascade)
 
   @@index([saleId])
+}
+
+// prisma/schema.prisma
+// ADD after BusinessSaleItem model
+
+model BusinessOrder {
+  id                String @id
+  sheetConnectionId String
+  externalSheetId   String
+
+  orderNumber     String
+  date            String
+  customerId      String?
+  customerName    String?
+  customerPhone   String?
+  customerAddress String?
+
+  subtotal       Float   @default(0)
+  deliveryFee    Float   @default(0)
+  discountAmount Float   @default(0)
+  total          Float   @default(0)
+  amountPaid     Float   @default(0)
+  amountDue      Float   @default(0)
+  paymentMethod  String?
+  paymentStatus  String  @default("UNPAID")
+
+  status String @default("PENDING")
+  // PENDING | CONFIRMED | PACKED | DISPATCHED | DELIVERED | CANCELLED | RETURNED
+
+  notes        String?
+  confirmedAt  DateTime?
+  packedAt     DateTime?
+  dispatchedAt DateTime?
+  deliveredAt  DateTime?
+  cancelledAt  DateTime?
+  returnedAt   DateTime?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus @default(SYNCED)
+  syncError    String?
+
+  items           BusinessOrderItem[]
+  delivery        BusinessDelivery?
+  sheetConnection SheetConnection     @relation(fields: [sheetConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sheetConnectionId, id])
+  @@index([sheetConnectionId, externalSheetId])
+  @@index([status])
+  @@index([syncStatus])
+}
+
+model BusinessOrderItem {
+  id          String  @id
+  orderId     String
+  productId   String
+  productName String
+  variation   String?
+  quantity    Float   @default(0)
+  unitPrice   Float   @default(0)
+  total       Float   @default(0)
+
+  order BusinessOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model BusinessDelivery {
+  id      String @id @default(cuid())
+  orderId String @unique
+
+  agentType    String // STAFF | COURIER
+  agentName    String
+  agentPhone   String?
+  courierName  String? // e.g. Daraz, Pathao
+  trackingCode String?
+  deliveryFee  Float   @default(0)
+  notes        String?
+
+  assignedAt  DateTime  @default(now())
+  deliveredAt DateTime?
+
+  order BusinessOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model BusinessReturn {
+  id                String @id
+  sheetConnectionId String
+  externalSheetId   String
+
+  returnNumber String
+  returnType   String // CUSTOMER_RETURN | SUPPLIER_RETURN
+  date         String
+
+  // For customer returns — linked to sale
+  saleId       String?
+  saleInvoice  String?
+  customerId   String?
+  customerName String?
+
+  // For supplier returns — linked to purchase
+  purchaseId      String?
+  purchaseInvoice String?
+  supplierId      String?
+  supplierName    String?
+
+  reason String?
+  notes  String?
+  status String  @default("PENDING")
+  // PENDING | APPROVED | REJECTED | RESTOCKED
+
+  totalValue   Float   @default(0)
+  refundAmount Float   @default(0)
+  refundMethod String?
+
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  lastSyncedAt DateTime?
+  syncStatus   SyncStatus @default(SYNCED)
+  syncError    String?
+
+  items           BusinessReturnItem[]
+  sheetConnection SheetConnection      @relation(fields: [sheetConnectionId], references: [id], onDelete: Cascade)
+
+  @@unique([sheetConnectionId, id])
+  @@index([sheetConnectionId, externalSheetId])
+  @@index([returnType])
+  @@index([status])
+  @@index([syncStatus])
+}
+
+model BusinessReturnItem {
+  id          String @id
+  returnId    String
+  productId   String
+  productName String
+  quantity    Float  @default(0)
+  unitPrice   Float  @default(0)
+  total       Float  @default(0)
+  condition   String @default("DAMAGED") // DAMAGED | GOOD | DEFECTIVE
+
+  return BusinessReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId])
 }
 
 model BusinessConfig {

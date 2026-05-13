@@ -19,8 +19,13 @@ import {
   enqueueSaleSync, // ADD
   enqueueSaleDeleteSync, // ADD
   importSalesFromSheet,
-  importConfigFromSheet,  // ADD
+  importConfigFromSheet, // ADD
   enqueueConfigSync,
+  enqueueOrderSync,
+  enqueueOrderDeleteSync,
+  importOrdersFromSheet,
+  enqueueReturnSync,
+  importReturnsFromSheet,
 } from "@/lib/db-sync";
 import {
   getOrFetch,
@@ -44,6 +49,11 @@ export const TABS = {
   PURCHASE_ITEMS: "PurchaseItems",
   SALES: "Sales",
   SALE_ITEMS: "SaleItems",
+  ORDERS: "Orders",
+  ORDER_ITEMS: "OrderItems",
+  DELIVERIES: "Deliveries",
+  RETURNS: "Returns",
+  RETURN_ITEMS: "ReturnItems",
 } as const;
 
 export const HEADERS = {
@@ -149,6 +159,86 @@ export const HEADERS = {
     "unitPrice",
     "total",
   ] as const,
+  ORDERS: [
+    "id",
+    "orderNumber",
+    "date",
+    "customerId",
+    "customerName",
+    "customerPhone",
+    "customerAddress",
+    "subtotal",
+    "deliveryFee",
+    "discountAmount",
+    "total",
+    "amountPaid",
+    "amountDue",
+    "paymentMethod",
+    "paymentStatus",
+    "status",
+    "notes",
+    "confirmedAt",
+    "packedAt",
+    "dispatchedAt",
+    "deliveredAt",
+    "cancelledAt",
+    "returnedAt",
+    "createdAt",
+  ] as const,
+  ORDER_ITEMS: [
+    "id",
+    "orderId",
+    "productId",
+    "productName",
+    "variation",
+    "quantity",
+    "unitPrice",
+    "total",
+  ] as const,
+  DELIVERIES: [
+    "id",
+    "orderId",
+    "agentType",
+    "agentName",
+    "agentPhone",
+    "courierName",
+    "trackingCode",
+    "deliveryFee",
+    "notes",
+    "assignedAt",
+    "deliveredAt",
+  ] as const,
+  RETURNS: [
+    "id",
+    "returnNumber",
+    "returnType",
+    "date",
+    "saleId",
+    "saleInvoice",
+    "customerId",
+    "customerName",
+    "purchaseId",
+    "purchaseInvoice",
+    "supplierId",
+    "supplierName",
+    "reason",
+    "notes",
+    "status",
+    "totalValue",
+    "refundAmount",
+    "refundMethod",
+    "createdAt",
+  ] as const,
+  RETURN_ITEMS: [
+    "id",
+    "returnId",
+    "productId",
+    "productName",
+    "quantity",
+    "unitPrice",
+    "total",
+    "condition",
+  ] as const,
 } as const;
 
 const RANGES = {
@@ -160,6 +250,11 @@ const RANGES = {
   PURCHASE_ITEMS: `${TABS.PURCHASE_ITEMS}!A2:G`,
   SALES: `${TABS.SALES}!A2:S`,
   SALE_ITEMS: `${TABS.SALE_ITEMS}!A2:H`,
+  ORDERS: `${TABS.ORDERS}!A2:X`,
+  ORDER_ITEMS: `${TABS.ORDER_ITEMS}!A2:H`,
+  DELIVERIES: `${TABS.DELIVERIES}!A2:K`,
+  RETURNS: `${TABS.RETURNS}!A2:S`,
+  RETURN_ITEMS: `${TABS.RETURN_ITEMS}!A2:H`,
 } as const;
 
 const NUMERIC_FIELDS = new Set([
@@ -306,6 +401,11 @@ export async function createBusinessManagementSpreadsheet(
           { properties: { title: TABS.PURCHASE_ITEMS, index: 5 } },
           { properties: { title: TABS.SALES, index: 6 } },
           { properties: { title: TABS.SALE_ITEMS, index: 7 } },
+          { properties: { title: TABS.ORDERS, index: 8 } },
+          { properties: { title: TABS.ORDER_ITEMS, index: 9 } },
+          { properties: { title: TABS.DELIVERIES, index: 10 } },
+          { properties: { title: TABS.RETURNS, index: 11 } },
+          { properties: { title: TABS.RETURN_ITEMS, index: 12 } },
         ],
       },
     });
@@ -327,6 +427,11 @@ export async function createBusinessManagementSpreadsheet(
       { tab: TABS.PURCHASE_ITEMS, headers: HEADERS.PURCHASE_ITEMS },
       { tab: TABS.SALES, headers: HEADERS.SALES },
       { tab: TABS.SALE_ITEMS, headers: HEADERS.SALE_ITEMS },
+      { tab: TABS.ORDERS, headers: HEADERS.ORDERS },
+      { tab: TABS.ORDER_ITEMS, headers: HEADERS.ORDER_ITEMS },
+      { tab: TABS.DELIVERIES, headers: HEADERS.DELIVERIES },
+      { tab: TABS.RETURNS, headers: HEADERS.RETURNS },
+      { tab: TABS.RETURN_ITEMS, headers: HEADERS.RETURN_ITEMS },
     ];
 
     await sheets.spreadsheets.values.batchUpdate({
@@ -424,6 +529,11 @@ export async function initializeExistingBusinessSheet(
       { tab: TABS.PURCHASE_ITEMS, headers: HEADERS.PURCHASE_ITEMS },
       { tab: TABS.SALES, headers: HEADERS.SALES },
       { tab: TABS.SALE_ITEMS, headers: HEADERS.SALE_ITEMS },
+      { tab: TABS.ORDERS, headers: HEADERS.ORDERS },
+      { tab: TABS.ORDER_ITEMS, headers: HEADERS.ORDER_ITEMS },
+      { tab: TABS.DELIVERIES, headers: HEADERS.DELIVERIES },
+      { tab: TABS.RETURNS, headers: HEADERS.RETURNS },
+      { tab: TABS.RETURN_ITEMS, headers: HEADERS.RETURN_ITEMS },
     ];
 
     await sheets.spreadsheets.values.batchUpdate({
@@ -445,9 +555,13 @@ export async function initializeExistingBusinessSheet(
 
 export async function getConfig(
   userId: string,
-  spreadsheetId: string
+  spreadsheetId: string,
 ): Promise<Record<string, string>> {
-  const cacheKey = getCacheKey(CACHE_PREFIX.METADATA, spreadsheetId, 'biz-config');
+  const cacheKey = getCacheKey(
+    CACHE_PREFIX.METADATA,
+    spreadsheetId,
+    "biz-config",
+  );
 
   return getOrFetch(
     cacheKey,
@@ -464,19 +578,19 @@ export async function getConfig(
 
         if (dbConfig) {
           return {
-            businessName: dbConfig.businessName ?? '',
-            logoUrl: dbConfig.logoUrl ?? '',
-            address: dbConfig.address ?? '',
-            phone: dbConfig.phone ?? '',
-            email: dbConfig.email ?? '',
-            website: dbConfig.website ?? '',
-            taxNumber: dbConfig.taxNumber ?? '',
-            currency: dbConfig.currency ?? '',
-            currencySymbol: dbConfig.currencySymbol ?? '',
-            paymentQrUrl: dbConfig.paymentQrUrl ?? '',
-            invoicePrefix: dbConfig.invoicePrefix ?? '',
-            invoiceFooter: dbConfig.invoiceFooter ?? '',
-            lowStockThreshold: dbConfig.lowStockThreshold ?? '',
+            businessName: dbConfig.businessName ?? "",
+            logoUrl: dbConfig.logoUrl ?? "",
+            address: dbConfig.address ?? "",
+            phone: dbConfig.phone ?? "",
+            email: dbConfig.email ?? "",
+            website: dbConfig.website ?? "",
+            taxNumber: dbConfig.taxNumber ?? "",
+            currency: dbConfig.currency ?? "",
+            currencySymbol: dbConfig.currencySymbol ?? "",
+            paymentQrUrl: dbConfig.paymentQrUrl ?? "",
+            invoicePrefix: dbConfig.invoicePrefix ?? "",
+            invoiceFooter: dbConfig.invoiceFooter ?? "",
+            lowStockThreshold: dbConfig.lowStockThreshold ?? "",
           };
         }
 
@@ -488,19 +602,19 @@ export async function getConfig(
 
         if (imported) {
           return {
-            businessName: imported.businessName ?? '',
-            logoUrl: imported.logoUrl ?? '',
-            address: imported.address ?? '',
-            phone: imported.phone ?? '',
-            email: imported.email ?? '',
-            website: imported.website ?? '',
-            taxNumber: imported.taxNumber ?? '',
-            currency: imported.currency ?? '',
-            currencySymbol: imported.currencySymbol ?? '',
-            paymentQrUrl: imported.paymentQrUrl ?? '',
-            invoicePrefix: imported.invoicePrefix ?? '',
-            invoiceFooter: imported.invoiceFooter ?? '',
-            lowStockThreshold: imported.lowStockThreshold ?? '',
+            businessName: imported.businessName ?? "",
+            logoUrl: imported.logoUrl ?? "",
+            address: imported.address ?? "",
+            phone: imported.phone ?? "",
+            email: imported.email ?? "",
+            website: imported.website ?? "",
+            taxNumber: imported.taxNumber ?? "",
+            currency: imported.currency ?? "",
+            currencySymbol: imported.currencySymbol ?? "",
+            paymentQrUrl: imported.paymentQrUrl ?? "",
+            invoicePrefix: imported.invoicePrefix ?? "",
+            invoiceFooter: imported.invoiceFooter ?? "",
+            lowStockThreshold: imported.lowStockThreshold ?? "",
           };
         }
       }
@@ -517,14 +631,13 @@ export async function getConfig(
       const rows = sheetRowsToObjects(data, HEADERS.CONFIG);
       return Object.fromEntries(
         rows
-          .filter(r => r.key != null && r.key !== '')
-          .map(r => [String(r.key), String(r.value ?? '')])
+          .filter((r) => r.key != null && r.key !== "")
+          .map((r) => [String(r.key), String(r.value ?? "")]),
       );
     },
-    CACHE_TTL.METADATA
+    CACHE_TTL.METADATA,
   );
 }
-
 
 export async function readConfigFresh(
   userId: string,
@@ -549,7 +662,7 @@ export async function readConfigFresh(
 export async function updateConfig(
   userId: string,
   spreadsheetId: string,
-  updates: Record<string, string>
+  updates: Record<string, string>,
 ): Promise<Record<string, string>> {
   const connection = await prisma.sheetConnection.findFirst({
     where: { userId, spreadsheetId, isActive: true },
@@ -565,17 +678,19 @@ export async function updateConfig(
       });
       const rows = sheetRowsToObjects(
         existing.data.values as string[][] | null,
-        HEADERS.CONFIG
+        HEADERS.CONFIG,
       );
       const configMap: Record<string, string> = Object.fromEntries(
-        rows.filter(r => r.key).map(r => [String(r.key), String(r.value ?? '')])
+        rows
+          .filter((r) => r.key)
+          .map((r) => [String(r.key), String(r.value ?? "")]),
       );
       Object.assign(configMap, updates);
       const values = Object.entries(configMap).map(([k, v]) => [k, v]);
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: `${TABS.CONFIG}!A2:B`,
-        valueInputOption: 'RAW',
+        valueInputOption: "RAW",
         requestBody: { values },
       });
       await invalidateSpreadsheetCache(spreadsheetId);
@@ -606,7 +721,7 @@ export async function updateConfig(
         invoicePrefix: updates.invoicePrefix ?? null,
         invoiceFooter: updates.invoiceFooter ?? null,
         lowStockThreshold: updates.lowStockThreshold ?? null,
-        syncStatus: 'PENDING',
+        syncStatus: "PENDING",
       },
     });
   } else {
@@ -625,9 +740,10 @@ export async function updateConfig(
         paymentQrUrl: updates.paymentQrUrl ?? existing.paymentQrUrl,
         invoicePrefix: updates.invoicePrefix ?? existing.invoicePrefix,
         invoiceFooter: updates.invoiceFooter ?? existing.invoiceFooter,
-        lowStockThreshold: updates.lowStockThreshold ?? existing.lowStockThreshold,
+        lowStockThreshold:
+          updates.lowStockThreshold ?? existing.lowStockThreshold,
         updatedAt: new Date(),
-        syncStatus: 'PENDING',
+        syncStatus: "PENDING",
         lastSyncedAt: null,
       },
     });
@@ -641,19 +757,19 @@ export async function updateConfig(
   });
 
   return {
-    businessName: updated?.businessName ?? '',
-    logoUrl: updated?.logoUrl ?? '',
-    address: updated?.address ?? '',
-    phone: updated?.phone ?? '',
-    email: updated?.email ?? '',
-    website: updated?.website ?? '',
-    taxNumber: updated?.taxNumber ?? '',
-    currency: updated?.currency ?? '',
-    currencySymbol: updated?.currencySymbol ?? '',
-    paymentQrUrl: updated?.paymentQrUrl ?? '',
-    invoicePrefix: updated?.invoicePrefix ?? '',
-    invoiceFooter: updated?.invoiceFooter ?? '',
-    lowStockThreshold: updated?.lowStockThreshold ?? '',
+    businessName: updated?.businessName ?? "",
+    logoUrl: updated?.logoUrl ?? "",
+    address: updated?.address ?? "",
+    phone: updated?.phone ?? "",
+    email: updated?.email ?? "",
+    website: updated?.website ?? "",
+    taxNumber: updated?.taxNumber ?? "",
+    currency: updated?.currency ?? "",
+    currencySymbol: updated?.currencySymbol ?? "",
+    paymentQrUrl: updated?.paymentQrUrl ?? "",
+    invoicePrefix: updated?.invoicePrefix ?? "",
+    invoiceFooter: updated?.invoiceFooter ?? "",
+    lowStockThreshold: updated?.lowStockThreshold ?? "",
   };
 }
 
@@ -965,7 +1081,7 @@ export async function getProducts(
         select: { id: true },
       });
 
-      if (!connection) throw new Error('Connection not found')
+      if (!connection) throw new Error("Connection not found");
 
       // No connection record — fallback to direct sheet read
       const data = await queueReadRequest(userId, async () => {
@@ -2367,6 +2483,606 @@ export async function deleteSale(
     enqueueProductSync(userId, spreadsheetId, item.productId);
   }
   await invalidateSpreadsheetCache(spreadsheetId);
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productName: string;
+  variation: string | null;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+}
+
+export interface Delivery {
+  id: string;
+  orderId: string;
+  agentType: "STAFF" | "COURIER";
+  agentName: string;
+  agentPhone: string | null;
+  courierName: string | null;
+  trackingCode: string | null;
+  deliveryFee: number;
+  notes: string | null;
+  assignedAt: string;
+  deliveredAt: string | null;
+}
+
+export interface BusinessOrder {
+  id: string;
+  orderNumber: string;
+  date: string;
+  customerId: string | null;
+  customerName: string | null;
+  customerPhone: string | null;
+  customerAddress: string | null;
+  subtotal: number;
+  deliveryFee: number;
+  discountAmount: number;
+  total: number;
+  amountPaid: number;
+  amountDue: number;
+  paymentMethod: string | null;
+  paymentStatus: "PAID" | "PARTIAL" | "UNPAID";
+  status:
+    | "PENDING"
+    | "CONFIRMED"
+    | "PACKED"
+    | "DISPATCHED"
+    | "DELIVERED"
+    | "CANCELLED"
+    | "RETURNED";
+  notes: string | null;
+  confirmedAt: string | null;
+  packedAt: string | null;
+  dispatchedAt: string | null;
+  deliveredAt: string | null;
+  cancelledAt: string | null;
+  returnedAt: string | null;
+  createdAt: string;
+  items?: OrderItem[];
+  delivery?: Delivery | null;
+}
+
+export interface ReturnItem {
+  id: string;
+  returnId: string;
+  productId: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  total: number;
+  condition: "DAMAGED" | "GOOD" | "DEFECTIVE";
+}
+
+export interface BusinessReturn {
+  id: string;
+  returnNumber: string;
+  returnType: "CUSTOMER_RETURN" | "SUPPLIER_RETURN";
+  date: string;
+  saleId: string | null;
+  saleInvoice: string | null;
+  customerId: string | null;
+  customerName: string | null;
+  purchaseId: string | null;
+  purchaseInvoice: string | null;
+  supplierId: string | null;
+  supplierName: string | null;
+  reason: string | null;
+  notes: string | null;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "RESTOCKED";
+  totalValue: number;
+  refundAmount: number;
+  refundMethod: string | null;
+  createdAt: string;
+  items?: ReturnItem[];
+}
+
+// ─── Order mapper ─────────────────────────────────────────────────────────────
+
+function dbRowToOrder(r: any): BusinessOrder {
+  return {
+    id: r.id,
+    orderNumber: r.orderNumber,
+    date: r.date,
+    customerId: r.customerId,
+    customerName: r.customerName,
+    customerPhone: r.customerPhone,
+    customerAddress: r.customerAddress,
+    subtotal: r.subtotal,
+    deliveryFee: r.deliveryFee,
+    discountAmount: r.discountAmount,
+    total: r.total,
+    amountPaid: r.amountPaid,
+    amountDue: r.amountDue,
+    paymentMethod: r.paymentMethod,
+    paymentStatus: r.paymentStatus as BusinessOrder['paymentStatus'],
+    status: r.status as BusinessOrder['status'],
+    notes: r.notes,
+    confirmedAt: r.confirmedAt instanceof Date ? r.confirmedAt.toISOString() : r.confirmedAt,
+    packedAt: r.packedAt instanceof Date ? r.packedAt.toISOString() : r.packedAt,
+    dispatchedAt: r.dispatchedAt instanceof Date ? r.dispatchedAt.toISOString() : r.dispatchedAt,
+    deliveredAt: r.deliveredAt instanceof Date ? r.deliveredAt.toISOString() : r.deliveredAt,
+    cancelledAt: r.cancelledAt instanceof Date ? r.cancelledAt.toISOString() : r.cancelledAt,
+    returnedAt: r.returnedAt instanceof Date ? r.returnedAt.toISOString() : r.returnedAt,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    items: r.items?.map((i: any) => ({
+      id: i.id, orderId: i.orderId,
+      productId: i.productId, productName: i.productName,
+      variation: i.variation, quantity: i.quantity,
+      unitPrice: i.unitPrice, total: i.total,
+    })),
+    delivery: r.delivery ? {
+      id: r.delivery.id, orderId: r.delivery.orderId,
+      agentType: r.delivery.agentType,
+      agentName: r.delivery.agentName,
+      agentPhone: r.delivery.agentPhone,
+      courierName: r.delivery.courierName,
+      trackingCode: r.delivery.trackingCode,
+      deliveryFee: r.delivery.deliveryFee,
+      notes: r.delivery.notes,
+      assignedAt: r.delivery.assignedAt instanceof Date ? r.delivery.assignedAt.toISOString() : r.delivery.assignedAt,
+      deliveredAt: r.delivery.deliveredAt instanceof Date ? r.delivery.deliveredAt.toISOString() : null,
+    } : null,
+  };
+}
+
+function dbRowToReturn(r: any): BusinessReturn {
+  return {
+    id: r.id,
+    returnNumber: r.returnNumber,
+    returnType: r.returnType as BusinessReturn['returnType'],
+    date: r.date,
+    saleId: r.saleId, saleInvoice: r.saleInvoice,
+    customerId: r.customerId, customerName: r.customerName,
+    purchaseId: r.purchaseId, purchaseInvoice: r.purchaseInvoice,
+    supplierId: r.supplierId, supplierName: r.supplierName,
+    reason: r.reason, notes: r.notes,
+    status: r.status as BusinessReturn['status'],
+    totalValue: r.totalValue,
+    refundAmount: r.refundAmount,
+    refundMethod: r.refundMethod,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    items: r.items?.map((i: any) => ({
+      id: i.id, returnId: i.returnId,
+      productId: i.productId, productName: i.productName,
+      quantity: i.quantity, unitPrice: i.unitPrice,
+      total: i.total, condition: i.condition,
+    })),
+  };
+}
+
+// ─── ORDERS ───────────────────────────────────────────────────────────────────
+
+export async function getOrders(
+  userId: string,
+  spreadsheetId: string
+): Promise<BusinessOrder[]> {
+  const cacheKey = getCacheKey(CACHE_PREFIX.SALES, spreadsheetId, 'biz-orders');
+  return getOrFetch(cacheKey, async () => {
+    const connection = await prisma.sheetConnection.findFirst({
+      where: { userId, spreadsheetId, isActive: true },
+      select: { id: true },
+    });
+    if (!connection) throw new Error('Connection not found');
+
+    const dbRows = await prisma.businessOrder.findMany({
+      where: { sheetConnectionId: connection.id, externalSheetId: spreadsheetId },
+      include: { items: true, delivery: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return dbRows.map(dbRowToOrder);
+  }, CACHE_TTL.SALES);
+}
+
+export async function createOrder(
+  userId: string,
+  spreadsheetId: string,
+  input: Omit<BusinessOrder, 'id' | 'orderNumber' | 'createdAt'> & {
+    items: Omit<OrderItem, 'id' | 'orderId'>[];
+    delivery?: Omit<Delivery, 'id' | 'orderId' | 'assignedAt' | 'deliveredAt'> | null;
+  }
+): Promise<BusinessOrder> {
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+  if (!connection) throw new Error('Connection not found');
+
+  const lastOrder = await prisma.businessOrder.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  const nextId = generateId('ORD', lastOrder ? [{ id: lastOrder.id }] : []);
+  const allOrders = await prisma.businessOrder.findMany({
+    where: { sheetConnectionId: connection.id },
+    select: { id: true },
+  });
+  const orderNumber = generateInvoiceNumber('ORD', allOrders);
+  const now = new Date();
+
+  const created = await prisma.businessOrder.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      orderNumber,
+      date: input.date,
+      customerId: input.customerId,
+      customerName: input.customerName,
+      customerPhone: input.customerPhone,
+      customerAddress: input.customerAddress,
+      subtotal: input.subtotal,
+      deliveryFee: input.deliveryFee,
+      discountAmount: input.discountAmount,
+      total: input.total,
+      amountPaid: input.amountPaid,
+      amountDue: input.amountDue,
+      paymentMethod: input.paymentMethod,
+      paymentStatus: input.paymentStatus,
+      status: 'PENDING',
+      notes: input.notes,
+      createdAt: now,
+      syncStatus: 'PENDING',
+    },
+  });
+
+  // Items
+  const orderItems = input.items.map((item, i) => ({
+    id: `OI_${created.id}_${i + 1}`,
+    orderId: created.id,
+    productId: item.productId,
+    productName: item.productName,
+    variation: item.variation ?? null,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    total: item.total,
+  }));
+  if (orderItems.length > 0) {
+    await prisma.businessOrderItem.createMany({ data: orderItems });
+  }
+
+  // Delivery info (optional at creation)
+  if (input.delivery) {
+    await prisma.businessDelivery.create({
+      data: {
+        id: `DEL_${created.id}`,
+        orderId: created.id,
+        agentType: input.delivery.agentType,
+        agentName: input.delivery.agentName,
+        agentPhone: input.delivery.agentPhone ?? null,
+        courierName: input.delivery.courierName ?? null,
+        trackingCode: input.delivery.trackingCode ?? null,
+        deliveryFee: input.delivery.deliveryFee,
+        notes: input.delivery.notes ?? null,
+        assignedAt: now,
+      },
+    });
+  }
+
+  // Stock deducted only on CONFIRMED — not on PENDING
+  // (see updateOrderStatus)
+
+  enqueueOrderSync(userId, spreadsheetId, created.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  const result = await prisma.businessOrder.findUnique({
+    where: { id: created.id },
+    include: { items: true, delivery: true },
+  });
+  return dbRowToOrder(result!);
+}
+
+export async function updateOrderStatus(
+  userId: string,
+  spreadsheetId: string,
+  orderId: string,
+  status: BusinessOrder['status'],
+  extra?: {
+    delivery?: Omit<Delivery, 'id' | 'orderId' | 'assignedAt' | 'deliveredAt'>;
+    amountPaid?: number;
+    paymentMethod?: string;
+  }
+): Promise<BusinessOrder> {
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+  if (!connection) throw new Error('Connection not found');
+
+  const existing = await prisma.businessOrder.findUnique({
+    where: { id: orderId },
+    include: { items: true, delivery: true },
+  });
+  if (!existing) throw new Error('Order not found');
+
+  const now = new Date();
+  const statusTimestamps: Record<string, Date | null> = {
+    confirmedAt: existing.confirmedAt,
+    packedAt: existing.packedAt,
+    dispatchedAt: existing.dispatchedAt,
+    deliveredAt: existing.deliveredAt,
+    cancelledAt: existing.cancelledAt,
+    returnedAt: existing.returnedAt,
+  };
+
+  // Set timestamp for new status
+  if (status === 'CONFIRMED') statusTimestamps.confirmedAt = now;
+  if (status === 'PACKED') statusTimestamps.packedAt = now;
+  if (status === 'DISPATCHED') statusTimestamps.dispatchedAt = now;
+  if (status === 'DELIVERED') statusTimestamps.deliveredAt = now;
+  if (status === 'CANCELLED') statusTimestamps.cancelledAt = now;
+  if (status === 'RETURNED') statusTimestamps.returnedAt = now;
+
+  // Stock logic
+  const wasConfirmed = ['CONFIRMED', 'PACKED', 'DISPATCHED', 'DELIVERED'].includes(existing.status);
+  const nowCancelled = status === 'CANCELLED';
+  const nowReturned = status === 'RETURNED';
+  const becomingConfirmed = status === 'CONFIRMED' && existing.status === 'PENDING';
+
+  // Deduct stock when PENDING → CONFIRMED
+  if (becomingConfirmed) {
+    for (const item of existing.items) {
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { decrement: item.quantity }, syncStatus: 'PENDING' },
+      });
+      enqueueProductSync(userId, spreadsheetId, item.productId);
+    }
+  }
+
+  // Restore stock when CONFIRMED/active → CANCELLED or RETURNED
+  if (wasConfirmed && (nowCancelled || nowReturned)) {
+    for (const item of existing.items) {
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { increment: item.quantity }, syncStatus: 'PENDING' },
+      });
+      enqueueProductSync(userId, spreadsheetId, item.productId);
+    }
+  }
+
+  const amountPaid = extra?.amountPaid ?? existing.amountPaid;
+  const updatedPaymentStatus =
+    amountPaid >= existing.total ? 'PAID' : amountPaid > 0 ? 'PARTIAL' : 'UNPAID';
+
+  const updated = await prisma.businessOrder.update({
+    where: { sheetConnectionId_id: { sheetConnectionId: connection.id, id: orderId } },
+    data: {
+      status,
+      amountPaid,
+      amountDue: Math.max(0, existing.total - amountPaid),
+      paymentStatus: updatedPaymentStatus,
+      paymentMethod: extra?.paymentMethod ?? existing.paymentMethod,
+      ...statusTimestamps,
+      syncStatus: 'PENDING',
+      lastSyncedAt: null,
+    },
+    include: { items: true, delivery: true },
+  });
+
+  // Upsert delivery info if provided
+  if (extra?.delivery) {
+    await prisma.businessDelivery.upsert({
+      where: { orderId },
+      update: {
+        agentType: extra.delivery.agentType,
+        agentName: extra.delivery.agentName,
+        agentPhone: extra.delivery.agentPhone ?? null,
+        courierName: extra.delivery.courierName ?? null,
+        trackingCode: extra.delivery.trackingCode ?? null,
+        deliveryFee: extra.delivery.deliveryFee,
+        notes: extra.delivery.notes ?? null,
+        deliveredAt: status === 'DELIVERED' ? now : null,
+      },
+      create: {
+        id: `DEL_${orderId}`,
+        orderId,
+        agentType: extra.delivery.agentType,
+        agentName: extra.delivery.agentName,
+        agentPhone: extra.delivery.agentPhone ?? null,
+        courierName: extra.delivery.courierName ?? null,
+        trackingCode: extra.delivery.trackingCode ?? null,
+        deliveryFee: extra.delivery.deliveryFee,
+        notes: extra.delivery.notes ?? null,
+        assignedAt: now,
+        deliveredAt: status === 'DELIVERED' ? now : null,
+      },
+    });
+  }
+
+  enqueueOrderSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToOrder(updated);
+}
+
+export async function deleteOrder(
+  userId: string,
+  spreadsheetId: string,
+  orderId: string
+): Promise<void> {
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+  if (!connection) throw new Error('Connection not found');
+
+  const order = await prisma.businessOrder.findUnique({
+    where: { id: orderId },
+    include: { items: true },
+  });
+  if (!order) throw new Error('Order not found');
+
+  // Restore stock if order was active
+  const wasActive = ['CONFIRMED', 'PACKED', 'DISPATCHED'].includes(order.status);
+  if (wasActive) {
+    for (const item of order.items) {
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { increment: item.quantity }, syncStatus: 'PENDING' },
+      });
+      enqueueProductSync(userId, spreadsheetId, item.productId);
+    }
+  }
+
+  await prisma.businessOrder.delete({
+    where: { sheetConnectionId_id: { sheetConnectionId: connection.id, id: orderId } },
+  });
+
+  enqueueOrderDeleteSync(userId, spreadsheetId, orderId);
+  await invalidateSpreadsheetCache(spreadsheetId);
+}
+
+// ─── RETURNS ──────────────────────────────────────────────────────────────────
+
+export async function getReturns(
+  userId: string,
+  spreadsheetId: string
+): Promise<BusinessReturn[]> {
+  const cacheKey = getCacheKey(CACHE_PREFIX.TRANSACTIONS, spreadsheetId, 'biz-returns');
+  return getOrFetch(cacheKey, async () => {
+    const connection = await prisma.sheetConnection.findFirst({
+      where: { userId, spreadsheetId, isActive: true },
+      select: { id: true },
+    });
+    if (!connection) throw new Error('Connection not found');
+
+    const dbRows = await prisma.businessReturn.findMany({
+      where: { sheetConnectionId: connection.id, externalSheetId: spreadsheetId },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    return dbRows.map(dbRowToReturn);
+  }, CACHE_TTL.TRANSACTIONS);
+}
+
+export async function createReturn(
+  userId: string,
+  spreadsheetId: string,
+  input: Omit<BusinessReturn, 'id' | 'returnNumber' | 'createdAt'> & {
+    items: Omit<ReturnItem, 'id' | 'returnId'>[];
+  }
+): Promise<BusinessReturn> {
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+  if (!connection) throw new Error('Connection not found');
+
+  const lastReturn = await prisma.businessReturn.findFirst({
+    where: { sheetConnectionId: connection.id },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  const prefix = input.returnType === 'CUSTOMER_RETURN' ? 'CRT' : 'SRT';
+  const nextId = generateId(`${prefix}`, lastReturn ? [{ id: lastReturn.id }] : []);
+  const allReturns = await prisma.businessReturn.findMany({
+    where: { sheetConnectionId: connection.id },
+    select: { id: true },
+  });
+  const returnNumber = generateInvoiceNumber(prefix, allReturns);
+  const now = new Date();
+
+  const created = await prisma.businessReturn.create({
+    data: {
+      id: nextId,
+      sheetConnectionId: connection.id,
+      externalSheetId: spreadsheetId,
+      returnNumber,
+      returnType: input.returnType,
+      date: input.date,
+      saleId: input.saleId, saleInvoice: input.saleInvoice,
+      customerId: input.customerId, customerName: input.customerName,
+      purchaseId: input.purchaseId, purchaseInvoice: input.purchaseInvoice,
+      supplierId: input.supplierId, supplierName: input.supplierName,
+      reason: input.reason, notes: input.notes,
+      status: 'PENDING',
+      totalValue: input.totalValue,
+      refundAmount: input.refundAmount,
+      refundMethod: input.refundMethod,
+      createdAt: now,
+      syncStatus: 'PENDING',
+    },
+  });
+
+  const returnItems = input.items.map((item, i) => ({
+    id: `RI_${created.id}_${i + 1}`,
+    returnId: created.id,
+    productId: item.productId,
+    productName: item.productName,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    total: item.total,
+    condition: item.condition,
+  }));
+  if (returnItems.length > 0) {
+    await prisma.businessReturnItem.createMany({ data: returnItems });
+  }
+
+  enqueueReturnSync(userId, spreadsheetId, created.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+
+  const result = await prisma.businessReturn.findUnique({
+    where: { id: created.id },
+    include: { items: true },
+  });
+  return dbRowToReturn(result!);
+}
+
+export async function approveReturn(
+  userId: string,
+  spreadsheetId: string,
+  returnId: string,
+  refundAmount: number,
+  refundMethod: string
+): Promise<BusinessReturn> {
+  const connection = await prisma.sheetConnection.findFirst({
+    where: { userId, spreadsheetId, isActive: true },
+    select: { id: true },
+  });
+  if (!connection) throw new Error('Connection not found');
+
+  const existing = await prisma.businessReturn.findUnique({
+    where: { id: returnId },
+    include: { items: true },
+  });
+  if (!existing) throw new Error('Return not found');
+
+  // Stock adjustment on approval
+  for (const item of existing.items) {
+    if (existing.returnType === 'CUSTOMER_RETURN') {
+      // Customer returning item → add back to stock
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { increment: item.quantity }, syncStatus: 'PENDING' },
+      });
+    } else {
+      // Supplier return → remove from stock
+      await prisma.businessProduct.updateMany({
+        where: { sheetConnectionId: connection.id, id: item.productId },
+        data: { stock: { decrement: item.quantity }, syncStatus: 'PENDING' },
+      });
+    }
+    enqueueProductSync(userId, spreadsheetId, item.productId);
+  }
+
+  const updated = await prisma.businessReturn.update({
+    where: { sheetConnectionId_id: { sheetConnectionId: connection.id, id: returnId } },
+    data: {
+      status: 'RESTOCKED',
+      refundAmount,
+      refundMethod,
+      syncStatus: 'PENDING',
+    },
+    include: { items: true },
+  });
+
+  enqueueReturnSync(userId, spreadsheetId, updated.id);
+  await invalidateSpreadsheetCache(spreadsheetId);
+  return dbRowToReturn(updated);
 }
 
 // ═══════════════════════════════════════════════════

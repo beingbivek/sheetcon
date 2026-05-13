@@ -10,6 +10,8 @@ import CustomersModule from './components/CustomersModule';
 import PurchasesModule from './components/PurchasesModule';
 import SalesModule from './components/SalesModule';
 import ReportsModule from './components/ReportsModule';
+import OrdersModule from './components/OrdersModule';
+import ReturnsModule from './components/ReturnsModule';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,13 +51,8 @@ export interface Connection {
 // ─── Nav config ───────────────────────────────────────────────────────────────
 
 type ModuleId =
-  | 'dashboard'
-  | 'suppliers'
-  | 'products'
-  | 'customers'
-  | 'purchases'
-  | 'sales'
-  | 'reports';
+  | 'dashboard' | 'suppliers' | 'products' | 'customers'
+  | 'purchases' | 'sales' | 'orders' | 'returns' | 'reports';
 
 interface NavItem {
   id: ModuleId;
@@ -131,6 +128,29 @@ const NAV_ITEMS: NavItem[] = [
     ),
     description: 'Point of sale & billing',
   },
+  {
+    id: 'orders',
+    label: 'Online Orders',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8l1 12a2 2 0 002 2h8a2 2 0 002-2l1-12M10 12a1 1 0 100 2 1 1 0 000-2zm4 0a1 1 0 100 2 1 1 0 000-2z" />
+      </svg>
+    ),
+    description: 'Online order management & delivery',
+  },
+  {
+    id: 'returns',
+    label: 'Returns',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+      </svg>
+    ),
+    description: 'Customer & supplier returns',
+  },
+
   {
     id: 'reports',
     label: 'Reports',
@@ -241,6 +261,10 @@ export default function BusinessApp({
         return <PurchasesModule {...commonProps} />;
       case 'sales':
         return <SalesModule {...commonProps} />;
+      case 'orders':
+        return <OrdersModule {...commonProps} />;
+      case 'returns':
+        return <ReturnsModule {...commonProps} />;
       case 'reports':
         return <ReportsModule {...commonProps} />;
       default:
