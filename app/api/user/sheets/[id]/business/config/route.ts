@@ -1,10 +1,10 @@
 // app/api/user/sheets/[id]/business/config/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { handleApiError, requireAuth, requireRateLimit } from '@/lib/security';
-import { prisma } from '@/lib/db';
-import { getConfig, updateConfig } from '@/lib/google-sheet-business';
-import { z } from 'zod/v4';
+import { NextRequest, NextResponse } from "next/server";
+import { handleApiError, requireAuth, requireRateLimit } from "@/lib/security";
+import { prisma } from "@/lib/db";
+import { getConfig, updateConfig } from "@/lib/google-sheet-business";
+import { z } from "zod/v4";
 
 const ConfigSchema = z.object({
   businessName: z.string().optional(),
@@ -20,30 +20,31 @@ const ConfigSchema = z.object({
   invoicePrefix: z.string().optional(),
   invoiceFooter: z.string().optional(),
   lowStockThreshold: z.string().optional(),
+  defaultTaxRate: z.string().optional(),  // ← NEW
 });
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   return handleApiError(async () => {
     const { id: connectionId } = await params;
     const user = await requireAuth();
-    await requireRateLimit(request, user.id, 'relaxed');
+    await requireRateLimit(request, user.id, "relaxed");
 
     const connection = await prisma.sheetConnection.findFirst({
       where: {
         id: connectionId,
         userId: user.id,
-        templateId: 'business-management',
+        templateId: "business-management",
         isActive: true,
       },
     });
 
     if (!connection) {
       return NextResponse.json(
-        { error: 'Connection not found' },
-        { status: 404 }
+        { error: "Connection not found" },
+        { status: 404 },
       );
     }
 
@@ -54,26 +55,26 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
+  { params }: { params: Promise<{ id: string }> },
 ) {
   return handleApiError(async () => {
     const { id: connectionId } = await params;
     const user = await requireAuth();
-    await requireRateLimit(request, user.id, 'standard');
+    await requireRateLimit(request, user.id, "standard");
 
     const connection = await prisma.sheetConnection.findFirst({
       where: {
         id: connectionId,
         userId: user.id,
-        templateId: 'business-management',
+        templateId: "business-management",
         isActive: true,
       },
     });
 
     if (!connection) {
       return NextResponse.json(
-        { error: 'Connection not found' },
-        { status: 404 }
+        { error: "Connection not found" },
+        { status: 404 },
       );
     }
 
@@ -87,7 +88,7 @@ export async function POST(
     const config = await updateConfig(
       user.id,
       connection.spreadsheetId,
-      stringified
+      stringified,
     );
 
     return NextResponse.json({ success: true, config });

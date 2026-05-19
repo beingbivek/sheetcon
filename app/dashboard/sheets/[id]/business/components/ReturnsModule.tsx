@@ -44,8 +44,18 @@ interface Return {
 
 interface Product { id: string; name: string; sellingPrice: number; costPrice: number; }
 interface Supplier { id: string; name: string; }
-interface Sale { id: string; invoiceNumber: string; customerName: string | null; }
-interface Purchase { id: string; invoiceNumber: string; supplierName: string | null; }
+interface Sale {
+  id: string;
+  invoiceNumber: string;
+  customerName: string | null;
+  items?: { productId: string; productName: string; quantity: number; unitPrice: number; total: number; }[];
+}
+interface Purchase {
+  id: string;
+  invoiceNumber: string;
+  supplierName: string | null;
+  items?: { productId: string; productName: string; quantity: number; unitPrice: number; total: number; }[];
+}
 
 interface ReturnsModuleProps {
   connection: Connection;
@@ -99,6 +109,72 @@ export default function ReturnsModule({ connection, config, fmt }: ReturnsModule
     quantity: string; unitPrice: string;
     total: number; condition: Condition;
   }[]>([]);
+
+  useEffect(() => {
+    if (returnType !== 'CUSTOMER_RETURN') return;
+
+    if (!selectedSaleId) {
+      setReturnItems([]);
+      setCustomerName('');
+      return;
+    }
+
+    const selectedSale = sales.find((s) => s.id === selectedSaleId);
+    if (!selectedSale) return;
+
+    setCustomerName(selectedSale.customerName ?? '');
+
+    if (selectedSale.items?.length) {
+      setReturnItems(
+        selectedSale.items.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: String(item.quantity),
+          unitPrice: String(item.unitPrice),
+          total: item.total,
+          condition: 'GOOD',
+        })),
+      );
+    }
+  }, [selectedSaleId, returnType, sales]);
+
+  useEffect(() => {
+    if (returnType !== 'SUPPLIER_RETURN') return;
+
+    if (!selectedPurchaseId) {
+      setReturnItems([]);
+      setSelectedSupplierId('');
+      return;
+    }
+
+    const selectedPurchase = purchases.find((p) => p.id === selectedPurchaseId);
+    if (!selectedPurchase) return;
+
+    if (selectedPurchase.supplierId) {
+      setSelectedSupplierId(selectedPurchase.supplierId);
+    }
+
+    if (selectedPurchase.items?.length) {
+      setReturnItems(
+        selectedPurchase.items.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          quantity: String(item.quantity),
+          unitPrice: String(item.unitPrice),
+          total: item.total,
+          condition: 'GOOD',
+        })),
+      );
+    }
+  }, [selectedPurchaseId, returnType, purchases]);
+
+  useEffect(() => {
+    setSelectedSaleId('');
+    setSelectedPurchaseId('');
+    setSelectedSupplierId('');
+    setCustomerName('');
+    setReturnItems([]);
+  }, [returnType]);
 
   // Approve modal
   const [approveRefundAmount, setApproveRefundAmount] = useState('');

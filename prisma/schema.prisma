@@ -197,16 +197,15 @@ model QrImage {
   updatedAt  DateTime @updatedAt
 }
 
-// ─── NEW: Business Product DB cache ───────────────────────────────────────────
-
 model BusinessProduct {
-  id                String @id // matches Google Sheet id (e.g. PROD_1)
+  id                String @id
   sheetConnectionId String
-  externalSheetId   String // spreadsheetId
+  externalSheetId   String
   sheetRowIndex     Int?
 
   name         String
   sku          String?
+  variation    String?
   category     String?
   description  String?
   costPrice    Float   @default(0)
@@ -217,6 +216,8 @@ model BusinessProduct {
   supplierId   String?
   supplierName String?
   imageUrl     String?
+  // ── TASK 4: tax pricing flag ──
+  pricedWithTax Boolean @default(false)
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -232,7 +233,7 @@ model BusinessProduct {
 }
 
 model BusinessSupplier {
-  id                String @id // matches sheet id e.g. SUP_1
+  id                String @id
   sheetConnectionId String
   externalSheetId   String
 
@@ -257,9 +258,6 @@ model BusinessSupplier {
   @@index([sheetConnectionId, externalSheetId])
   @@index([syncStatus])
 }
-
-// prisma/schema.prisma
-// ADD after BusinessSupplier model
 
 model BusinessCustomer {
   id                String @id
@@ -360,6 +358,8 @@ model BusinessSale {
   paymentMethod  String?
   status         String  @default("UNPAID")
   notes          String?
+  // ── TASK 1: sale type ──
+  saleType       String  @default("WALK_IN") // WALK_IN | ONLINE
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -390,9 +390,6 @@ model BusinessSaleItem {
   @@index([saleId])
 }
 
-// prisma/schema.prisma
-// ADD after BusinessSaleItem model
-
 model BusinessOrder {
   id                String @id
   sheetConnectionId String
@@ -415,7 +412,6 @@ model BusinessOrder {
   paymentStatus  String  @default("UNPAID")
 
   status String @default("PENDING")
-  // PENDING | CONFIRMED | PACKED | DISPATCHED | DELIVERED | CANCELLED | RETURNED
 
   notes        String?
   confirmedAt  DateTime?
@@ -460,10 +456,10 @@ model BusinessDelivery {
   id      String @id @default(cuid())
   orderId String @unique
 
-  agentType    String // STAFF | COURIER
+  agentType    String
   agentName    String
   agentPhone   String?
-  courierName  String? // e.g. Daraz, Pathao
+  courierName  String?
   trackingCode String?
   deliveryFee  Float   @default(0)
   notes        String?
@@ -482,16 +478,14 @@ model BusinessReturn {
   externalSheetId   String
 
   returnNumber String
-  returnType   String // CUSTOMER_RETURN | SUPPLIER_RETURN
+  returnType   String
   date         String
 
-  // For customer returns — linked to sale
   saleId       String?
   saleInvoice  String?
   customerId   String?
   customerName String?
 
-  // For supplier returns — linked to purchase
   purchaseId      String?
   purchaseInvoice String?
   supplierId      String?
@@ -500,7 +494,6 @@ model BusinessReturn {
   reason String?
   notes  String?
   status String  @default("PENDING")
-  // PENDING | APPROVED | REJECTED | RESTOCKED
 
   totalValue   Float   @default(0)
   refundAmount Float   @default(0)
@@ -530,7 +523,7 @@ model BusinessReturnItem {
   quantity    Float  @default(0)
   unitPrice   Float  @default(0)
   total       Float  @default(0)
-  condition   String @default("DAMAGED") // DAMAGED | GOOD | DEFECTIVE
+  condition   String @default("DAMAGED")
 
   return BusinessReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
 
@@ -555,6 +548,8 @@ model BusinessConfig {
   invoicePrefix     String?
   invoiceFooter     String?
   lowStockThreshold String?
+  // ── TASK 5: global default tax rate ──
+  defaultTaxRate    String?
 
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
@@ -567,8 +562,6 @@ model BusinessConfig {
   @@index([sheetConnectionId])
   @@index([syncStatus])
 }
-
-// ─── ENUMS ────────────────────────────────────────────────────────────────────
 
 enum SyncStatus {
   PENDING
